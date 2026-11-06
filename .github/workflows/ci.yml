@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: actionlint (workflows)
+        run: |
+          set -euo pipefail
+          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+          shopt -s nullglob
+          files=(.github/workflows/*.yml .github/workflows/*.yaml)
+          if [ "${#files[@]}" -gt 0 ]; then
+            ./actionlint -color "${files[@]}"
+          fi
+
+      - name: Validate action metadata
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet pyyaml
+          python3 - <<'PY'
+          import glob, sys, yaml
+
+          files = sorted(glob.glob(".github/actions/*/action.y*ml"))
+          if not files:
+              sys.exit("no actions found under .github/actions/")
+          errors = []
+          for f in files:
+              try:
+                  doc = yaml.safe_load(open(f))
+              except yaml.YAMLError as e:
+                  errors.append(f"{f}: invalid YAML: {e}")
+                  continue
+              for key in ("name", "description", "runs"):
+                  if not doc.get(key):
+                      errors.append(f"{f}: missing '{key}'")
+              if (doc.get("runs") or {}).get("using") != "composite":
+                  errors.append(f"{f}: runs.using must be 'composite'")
+              for step in (doc.get("runs") or {}).get("steps", []):
+                  if "run" in step and "shell" not in step:
+                      errors.append(f"{f}: step '{step.get('name', step['run'][:30])}' has run without shell")
+              print(f"ok {f}")
+          if errors:
+              print("\n".join(errors))
+              sys.exit(1)
+          PY
+
+  # Runs the actions from this very commit on a tiny Go fixture.
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Create fixture
+        run: |
+          set -euo pipefail
+          mkdir -p fixture/go
+          cd fixture/go
+          go_version="1.22"
+          printf 'module example.com/fixture\n\ngo %s\n' "${go_version}" > go.mod
+          printf 'package main\n\nfunc main() {}\n' > main.go
+
+      - uses: ./.github/actions/lang-setup
+        with:
+          lang: go
+          root: fixture/go
+          go-version: "1.22"
+
+      - uses: ./.github/actions/lang-compile
+        with:
+          lang: go
+          root: fixture/go

@@ -1,0 +1,56 @@
+name: lang-compile
+description: Compile one language project (go build, mvn compile, sbt compile, cargo check).
+inputs:
+  lang:
+    description: go | java | scala | rust
+    required: true
+  root:
+    description: Directory of the language project. For go, every go.mod below it is built.
+    required: false
+    default: "."
+  tidy:
+    description: Run `go mod tidy` before building Go modules (generation); false in PR checks.
+    required: false
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - name: Compile ${{ inputs.lang }}
+      shell: bash
+      env:
+        LANG_NAME: ${{ inputs.lang }}
+        ROOT: ${{ inputs.root }}
+        TIDY: ${{ inputs.tidy }}
+      run: |
+        set -euo pipefail
+        case "${LANG_NAME}" in
+          go)
+            # Every module below root (nested modules such as vN/ are separate).
+            mods="$(find "${ROOT}" -name go.mod | sort)"
+            if [ -z "${mods}" ]; then
+              echo "no Go module found under ${ROOT}" >&2
+              exit 1
+            fi
+            while IFS= read -r mod; do
+              dir="$(dirname "${mod}")"
+              echo "::group::go build ${dir}"
+              ( cd "${dir}"
+                if [ "${TIDY}" = "true" ]; then go mod tidy; fi
+                go build ./... )
+              echo "::endgroup::"
+            done <<< "${mods}"
+            ;;
+          java)
+            mvn -q -B -f "${ROOT}/pom.xml" compile
+            ;;
+          scala)
+            ( cd "${ROOT}" && sbt -batch compile )
+            ;;
+          rust)
+            ( cd "${ROOT}" && cargo check )
+            ;;
+          *)
+            echo "unknown language ${LANG_NAME}" >&2
+            exit 2
+            ;;
+        esac
