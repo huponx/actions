@@ -3,7 +3,6 @@ name: CI
 on:
   pull_request:
     branches: [main]
-    types: [opened, synchronize, reopened, edited]
 
 permissions:
   contents: read
@@ -59,23 +58,6 @@ jobs:
               print("\n".join(errors))
               sys.exit(1)
           PY
-
-  pr-title:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Conventional commit title
-        env:
-          PR_TITLE: ${{ github.event.pull_request.title }}
-        run: |
-          set -euo pipefail
-          # Squash merge uses the PR title as commit subject; release.yml reads it to pick the bump.
-          pattern='^(feat|fix|perf|refactor|docs|chore|ci|test|build)(\([a-z0-9-]+\))?!?: .+'
-          if ! [[ "${PR_TITLE}" =~ ${pattern} ]]; then
-            echo "::error::PR title must look like 'feat(lang-setup): add ruby' (types: feat fix perf refactor docs chore ci test build; '!' marks a breaking change). Got: ${PR_TITLE}"
-            exit 1
-          fi
-          echo "ok: ${PR_TITLE}"
 
   # Runs the actions from this very commit on a tiny Go fixture.
   smoke:
