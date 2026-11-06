@@ -1,0 +1,153 @@
+name: Release
+
+# Every merge to main that changes an action is released:
+#   - semver tag vX.Y.Z + GitHub Release
+#   - floating major tag vX moved to the same commit, so consumers can use @vX
+# The bump comes from conventional commits since the previous release:
+#   type!: or BREAKING CHANGE -> major, feat -> minor, anything else -> patch.
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/actions/**"
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Override the automatic bump (auto = from commits). Also releases when no action changed.
+        type: choice
+        options: [auto, patch, minor, major]
+        default: auto
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          # BOT_TOKEN is needed once a tag ruleset restricts creating/moving tags.
+          token: ${{ secrets.BOT_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Release
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.BOT_TOKEN || secrets.GITHUB_TOKEN }}
+          EVENT: ${{ github.event_name }}
+          BUMP_INPUT: ${{ inputs.bump }}
+        run: |
+          set -euo pipefail
+          out() { echo "$1=$2" >> "${GITHUB_OUTPUT}"; }
+          out released false
+
+          latest="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1 || true)"
+          out previous "${latest:-none}"
+
+          existing="$(git tag --points-at HEAD | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n1 || true)"
+          if [ -n "${existing}" ]; then
+            out reason "HEAD is already released as ${existing}"
+            exit 0
+          fi
+
+          bump="auto"
+          [ "${EVENT}" = "workflow_dispatch" ] && bump="${BUMP_INPUT:-auto}"
+
+          if [ -z "${latest}" ]; then
+            tag="v1.0.0"
+            why="first release"
+          else
+            # Only changes under .github/actions release, unless a bump was chosen by hand.
+            if [ "${bump}" = "auto" ] && git diff --quiet "${latest}" HEAD -- .github/actions; then
+              out reason "no change under .github/actions since ${latest}"
+              exit 0
+            fi
+
+            if [ "${bump}" = "auto" ]; then
+              bump="patch"
+              why="no feat or breaking commit"
+              while IFS= read -r -d $'\x1e' rec; do
+                subject="${rec%%$'\x1f'*}"
+                subject="${subject#$'\n'}"
+                body="${rec#*$'\x1f'}"
+                if [[ "${subject}" =~ ^[a-z]+(\([^\)]*\))?!: ]] || grep -q 'BREAKING CHANGE' <<< "${body}"; then
+                  bump="major"; why="breaking: ${subject}"
+                  break
+                elif [[ "${subject}" =~ ^feat(\(|:|!) ]] && [ "${bump}" != "major" ]; then
+                  bump="minor"; why="feat: ${subject}"
+                fi
+              done < <(git log --format='%s%x1f%b%x1e' "${latest}..HEAD" -- .github/actions)
+            else
+              why="chosen by hand"
+            fi
+
+            ver="${latest#v}"
+            major="${ver%%.*}"
+            rest="${ver#*.}"
+            minor="${rest%%.*}"
+            patch="${rest#*.}"
+            case "${bump}" in
+              major) major=$((major + 1)); minor=0; patch=0 ;;
+              minor) minor=$((minor + 1)); patch=0 ;;
+              patch) patch=$((patch + 1)) ;;
+              *) echo "unknown bump: ${bump}" >&2; exit 1 ;;
+            esac
+            tag="v${major}.${minor}.${patch}"
+          fi
+
+          major_tag="${tag%%.*}"
+          echo "Releasing ${tag} (bump=${bump}, ${why}, previous=${latest:-none}); moving ${major_tag}"
+
+          url="$(gh release create "${tag}" --generate-notes --target "${GITHUB_SHA}")"
+
+          git tag -f "${major_tag}" "${GITHUB_SHA}"
+          git push --force origin "refs/tags/${major_tag}"
+
+          {
+            echo "released=true"
+            echo "tag=${tag}"
+            echo "major_tag=${major_tag}"
+            echo "bump=${bump}"
+            echo "why=${why}"
+            echo "url=${url}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Summary
+        if: always()
+        env:
+          RESULT: ${{ job.status }}
+          RELEASED: ${{ steps.release.outputs.released }}
+          REASON: ${{ steps.release.outputs.reason }}
+          PREVIOUS: ${{ steps.release.outputs.previous }}
+          TAG: ${{ steps.release.outputs.tag }}
+          MAJOR_TAG: ${{ steps.release.outputs.major_tag }}
+          BUMP: ${{ steps.release.outputs.bump }}
+          WHY: ${{ steps.release.outputs.why }}
+          URL: ${{ steps.release.outputs.url }}
+        run: |
+          {
+            echo "## Release actions"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Result | ${RESULT} |"
+            if [ "${RELEASED}" = "true" ]; then
+              echo "| Tag | \`${TAG}\` |"
+              echo "| Floating tag | \`${MAJOR_TAG}\` (moved) |"
+              echo "| Bump | ${BUMP} (${WHY}) |"
+              echo "| Previous | \`${PREVIOUS}\` |"
+              echo "| Release | ${URL} |"
+              echo "| Use | \`huponx/actions/.github/actions/<name>@${MAJOR_TAG}\` |"
+            else
+              echo "| Released | no |"
+              echo "| Reason | ${REASON:-see logs} |"
+              echo "| Previous | \`${PREVIOUS:-none}\` |"
+            fi
+          } >> "${GITHUB_STEP_SUMMARY}"
