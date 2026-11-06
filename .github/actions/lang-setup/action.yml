@@ -1,0 +1,55 @@
+name: lang-setup
+description: Install the toolchain (and dependency caches) needed to compile one language project.
+inputs:
+  lang:
+    description: go | java | scala | rust
+    required: true
+  root:
+    description: Directory of the language project (pom.xml, build.sbt, Cargo.toml). Used for cache keys.
+    required: false
+    default: "."
+  go-version:
+    description: Go version (go.mod may ask for a newer patch; GOTOOLCHAIN=auto fetches it)
+    required: false
+    default: "1.26"
+  java-version:
+    description: JDK version for java and scala
+    required: false
+    default: "17"
+runs:
+  using: composite
+  steps:
+    - if: inputs.lang == 'go'
+      uses: actions/setup-go@v6
+      with:
+        go-version: ${{ inputs.go-version }}
+        cache: false
+
+    - if: inputs.lang == 'java'
+      uses: actions/setup-java@v5
+      with:
+        distribution: temurin
+        java-version: ${{ inputs.java-version }}
+        cache: maven
+        cache-dependency-path: ${{ inputs.root }}/pom.xml
+
+    - if: inputs.lang == 'scala'
+      uses: actions/setup-java@v5
+      with:
+        distribution: temurin
+        java-version: ${{ inputs.java-version }}
+        cache: sbt
+        cache-dependency-path: |
+          ${{ inputs.root }}/build.sbt
+          ${{ inputs.root }}/project/build.properties
+
+    - if: inputs.lang == 'scala'
+      uses: sbt/setup-sbt@v1
+
+    - if: inputs.lang == 'rust'
+      uses: dtolnay/rust-toolchain@stable
+
+    - if: inputs.lang == 'rust'
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: ${{ inputs.root }}
