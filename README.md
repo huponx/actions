@@ -107,9 +107,12 @@ REPO=huponx/actions
      "bypass_actors": []
    }
    ```
+   Apply it (run from the folder containing the file; the file is only an input, do not commit it):
    ```bash
    gh api repos/$REPO/rulesets --method POST --input main-ruleset.json
+   gh api repos/$REPO/rulesets --jq '.[] | {id, name, enforcement}'   # verify
    ```
+   Or in the UI: **Settings > Rules > Rulesets > New ruleset > Import a ruleset**, pick the JSON file. The check names (`lint`, `pr-title`, `smoke`) only appear in the picker after each has run once, which is why step 1 comes first. To change it later: `gh api repos/$REPO/rulesets/<id> --method PUT --input main-ruleset.json`.
 5. **Tag protection** (optional): release tags `vX.Y.Z` must never move; the floating `vX` tags must be movable by the bot.
    ```json
    {
