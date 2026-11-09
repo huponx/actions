@@ -3,7 +3,7 @@ name: Service PR
 # Pull request flow: lint, test, build, Trivy scan and chart checks. Nothing is pushed.
 # Caller (the service repository):
 #   on: { pull_request: { branches: [main] } }
-#   permissions: { contents: read, packages: write }
+#   permissions: { contents: read, packages: write, pull-requests: write }
 #   jobs: { pr: { uses: huponx/actions/.github/workflows/service-pr.yml@v1, secrets: inherit } }
 on:
   workflow_call:
@@ -23,6 +23,7 @@ on:
 permissions:
   contents: read
   packages: write
+  pull-requests: write
 
 jobs:
   contract:
@@ -73,4 +74,5 @@ jobs:
       version: ${{ needs.version.outputs.version }}
       push: false
       sarif: ${{ inputs.sarif }}
+      comment: true
     secrets: inherit
