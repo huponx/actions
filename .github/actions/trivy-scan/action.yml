@@ -1,0 +1,139 @@
+name: trivy-scan
+description: >-
+  Scan a container image for known vulnerabilities (CVE) with Trivy and write a normalised, de-duplicated
+  JSON list (id, package, installed and fixed version, severity). Reusable on its own or as the input of
+  a comparison between two images.
+inputs:
+  image:
+    description: Image reference to scan, for example ghcr.io/owner/app:1.2.3.
+    required: true
+  severity:
+    description: Comma separated severities to report.
+    required: false
+    default: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+  ignore-unfixed:
+    description: Hide vulnerabilities that have no fix yet.
+    required: false
+    default: "false"
+  registry-username:
+    description: Registry user for a private image (leave empty for a public image).
+    required: false
+    default: ""
+  registry-password:
+    description: Registry password or token for a private image, for example secrets.GITHUB_TOKEN for ghcr.io.
+    required: false
+    default: ""
+  trivy-version:
+    description: Trivy version to install (latest or a tag such as v0.58.1).
+    required: false
+    default: latest
+  timeout:
+    description: Scan timeout.
+    required: false
+    default: 10m
+  output-dir:
+    description: Folder for the report files (default is a folder under the runner temp directory).
+    required: false
+    default: ""
+  fail-on-severity:
+    description: Comma separated severities that fail the step when present (empty never fails on findings).
+    required: false
+    default: ""
+  summary:
+    description: Write a severity table to the job summary.
+    required: false
+    default: "true"
+outputs:
+  vulnerabilities:
+    description: Path of the normalised JSON list.
+    value: ${{ steps.scan.outputs.vulnerabilities }}
+  report:
+    description: Path of the raw Trivy JSON report.
+    value: ${{ steps.scan.outputs.report }}
+  total:
+    description: Number of vulnerabilities.
+    value: ${{ steps.scan.outputs.total }}
+  critical:
+    description: Number of CRITICAL vulnerabilities.
+    value: ${{ steps.scan.outputs.critical }}
+  high:
+    description: Number of HIGH vulnerabilities.
+    value: ${{ steps.scan.outputs.high }}
+  medium:
+    description: Number of MEDIUM vulnerabilities.
+    value: ${{ steps.scan.outputs.medium }}
+  low:
+    description: Number of LOW vulnerabilities.
+    value: ${{ steps.scan.outputs.low }}
+runs:
+  using: composite
+  steps:
+    - name: Install Trivy
+      uses: aquasecurity/setup-trivy@v0.2.3
+      with:
+        version: ${{ inputs.trivy-version }}
+        cache: true
+
+    - name: Scan the image
+      id: scan
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+        SEVERITY: ${{ inputs.severity }}
+        IGNORE_UNFIXED: ${{ inputs.ignore-unfixed }}
+        TIMEOUT: ${{ inputs.timeout }}
+        OUTPUT_DIR: ${{ inputs.output-dir }}
+        TRIVY_USERNAME: ${{ inputs.registry-username }}
+        TRIVY_PASSWORD: ${{ inputs.registry-password }}
+        SCRIPTS: ${{ github.action_path }}/scripts
+        TEMP_DIR: ${{ runner.temp }}
+      run: |
+        set -euo pipefail
+        dir="${OUTPUT_DIR:-${TEMP_DIR}/trivy-scan}"
+        mkdir -p "${dir}"
+        args=(image --quiet --scanners vuln --format json --output "${dir}/trivy-raw.json"
+              --severity "${SEVERITY}" --timeout "${TIMEOUT}")
+        [ "${IGNORE_UNFIXED}" != "true" ] || args+=(--ignore-unfixed)
+        trivy "${args[@]}" "${IMAGE}"
+        counts=$(bash "${SCRIPTS}/normalize.sh" "${dir}/trivy-raw.json" "${dir}/vulnerabilities.json")
+        {
+          echo "vulnerabilities=${dir}/vulnerabilities.json"
+          echo "report=${dir}/trivy-raw.json"
+          echo "${counts}"
+        } >> "${GITHUB_OUTPUT}"
+        echo "${counts}"
+
+    - name: Job summary
+      if: inputs.summary == 'true'
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+        TOTAL: ${{ steps.scan.outputs.total }}
+        CRITICAL: ${{ steps.scan.outputs.critical }}
+        HIGH: ${{ steps.scan.outputs.high }}
+        MEDIUM: ${{ steps.scan.outputs.medium }}
+        LOW: ${{ steps.scan.outputs.low }}
+      run: |
+        {
+          echo "### Trivy: \`${IMAGE}\`"
+          echo
+          echo "| Critical | High | Medium | Low | Total |"
+          echo "|---:|---:|---:|---:|---:|"
+          echo "| ${CRITICAL} | ${HIGH} | ${MEDIUM} | ${LOW} | ${TOTAL} |"
+          echo
+        } >> "${GITHUB_STEP_SUMMARY}"
+
+    - name: Fail on severity
+      if: inputs.fail-on-severity != ''
+      shell: bash
+      env:
+        FAIL_ON: ${{ inputs.fail-on-severity }}
+        FILE: ${{ steps.scan.outputs.vulnerabilities }}
+      run: |
+        set -euo pipefail
+        n=$(jq --arg s "${FAIL_ON}" '($s | split(",") | map(ascii_upcase | gsub(" "; ""))) as $f
+              | map(select(.severity as $v | $f | index($v))) | length' "${FILE}")
+        if [ "${n}" -gt 0 ]; then
+          echo "::error::${n} vulnerability(ies) with severity ${FAIL_ON}"
+          exit 1
+        fi

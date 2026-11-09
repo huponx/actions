@@ -1,5 +1,7 @@
 name: PR title
 
+# Separate from ci.yml so that editing the title re-runs only this check,
+# not lint/smoke. Required status check name: "pr-title".
 on:
   pull_request:
     branches: [main]
