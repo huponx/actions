@@ -168,25 +168,23 @@ runs:
         sed -i '/Open the side-by-side diff/d' "${WORK}/comment.md"
         printf '\n_HTML diff pages were not published (see the "Publish the HTML pages" step)._\n' >> "${WORK}/comment.md"
 
-    - name: Comment on the pull request
+    - name: Job summary
       if: steps.guard.outputs.skip != 'true' && inputs.comment == 'true'
       shell: bash
       env:
-        GH_TOKEN: ${{ inputs.github-token }}
-        PR_NUMBER: ${{ github.event.pull_request.number }}
         WORK: ${{ steps.report.outputs.work }}
-        CHANGED: ${{ steps.report.outputs.changed }}
-      run: |
-        set -euo pipefail
-        cp "${WORK}/comment.md" "${GITHUB_STEP_SUMMARY}"
-        id=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" --paginate \
-               --jq '.[] | select(.body | contains("<!-- argocd-manifest-diff -->")) | .id' | head -n 1)
-        if [ -n "${id}" ]; then
-          gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${id}" -F body=@"${WORK}/comment.md" >/dev/null
-        elif [ "${CHANGED}" != "0" ]; then
-          # No comment when no Application changed, unless an old one has to be refreshed.
-          gh api -X POST "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" -F body=@"${WORK}/comment.md" >/dev/null
-        fi
+      run: cp "${WORK}/comment.md" "${GITHUB_STEP_SUMMARY}"
+
+    - name: Comment on the pull request
+      if: steps.guard.outputs.skip != 'true' && inputs.comment == 'true'
+      uses: huponx/actions/.github/actions/pr-comment@v1
+      with:
+        body-file: ${{ steps.report.outputs.work }}/comment.md
+        marker: "<!-- argocd-manifest-diff -->"
+        github-token: ${{ inputs.github-token }}
+        # No comment when no Application changed, unless an old one has to be refreshed.
+        create: ${{ steps.report.outputs.changed != '0' }}
+        fail-on-error: "true"
 
     - name: Fail when publishing failed
       if: steps.publish.outcome == 'failure' && inputs.fail-on-publish-error == 'true'

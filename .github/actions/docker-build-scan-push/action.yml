@@ -47,6 +47,10 @@ inputs:
     description: Upload the SARIF report to code scanning (needs security-events write and code scanning enabled).
     required: false
     default: "false"
+  comment:
+    description: Post or update a sticky pull request comment that lists the CVEs of the image (needs pull-requests write; skipped on forks and outside pull requests).
+    required: false
+    default: "false"
   build-args:
     description: Extra build arguments, one KEY=VALUE per line (VERSION and REVISION are always set).
     required: false
@@ -104,6 +108,30 @@ runs:
         fail-on-severity: ${{ inputs.fail-on-vulnerabilities == 'true' && inputs.severity || '' }}
         ignorefile: ${{ inputs.trivyignore }}
         sarif: ${{ inputs.sarif }}
+
+    # always(): the comment is also wanted when the scan gate fails the step above.
+    - name: Build the CVE comment
+      id: cve-comment
+      if: always() && inputs.comment == 'true' && steps.scan.outputs.vulnerabilities != ''
+      shell: bash
+      env:
+        VULNS: ${{ steps.scan.outputs.vulnerabilities }}
+        IMAGE_NAME: ${{ inputs.image-name }}
+        IMAGE: ${{ steps.ref.outputs.image }}
+        BODY: ${{ runner.temp }}/cve-comment-${{ inputs.image-name }}.md
+        SCRIPTS: ${{ github.action_path }}/scripts
+      run: |
+        set -euo pipefail
+        bash "${SCRIPTS}/cve-comment.sh" "${VULNS}" "${IMAGE_NAME}" "${IMAGE}" "${BODY}"
+        echo "body=${BODY}" >> "${GITHUB_OUTPUT}"
+
+    - name: Comment the CVEs on the pull request
+      if: always() && steps.cve-comment.outputs.body != ''
+      uses: huponx/actions/.github/actions/pr-comment@v1
+      with:
+        body-file: ${{ steps.cve-comment.outputs.body }}
+        marker: "<!-- trivy-image:${{ inputs.image-name }} -->"
+        github-token: ${{ inputs.github-token }}
 
     - name: Upload the SARIF report
       if: always() && inputs.sarif == 'true' && steps.scan.outputs.sarif != ''
