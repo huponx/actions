@@ -28,6 +28,15 @@ jobs:
             ./actionlint -color "${files[@]}"
           fi
 
+      - name: shellcheck (action scripts and tests)
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(.github/actions/*/scripts/*.sh tests/*.sh)
+          if [ "${#files[@]}" -gt 0 ]; then
+            shellcheck "${files[@]}"
+          fi
+
       - name: Validate action metadata
         run: |
           set -euo pipefail
@@ -85,3 +94,18 @@ jobs:
         with:
           lang: go
           root: fixture/go
+
+  # argocd-manifest-diff scripts end to end: local chart, git history, local bare "pages" repository.
+  test-argocd-manifest-diff:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: azure/setup-helm@v5
+        with:
+          version: v3.16.4
+      - name: Run the tests
+        run: |
+          bash tests/argocd-manifest-diff.sh
+          bash tests/trivy-scan.sh
+          bash tests/argocd-cve.sh

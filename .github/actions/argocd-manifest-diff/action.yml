@@ -1,0 +1,196 @@
+name: argocd-manifest-diff
+description: >-
+  For a pull request that changes ArgoCD Applications (Helm charts), render both revisions, publish a
+  side-by-side HTML diff to a GitHub Pages repository and keep one sticky PR comment with the changed
+  Kubernetes resources, the HTML link and the compare links of the service repository.
+inputs:
+  github-token:
+    description: Token with pull-requests write (comment) and read access to the chart registry. Normally secrets.GITHUB_TOKEN.
+    required: true
+  diffs-token:
+    description: Token with Contents read/write on the Pages repository (a fine-grained PAT). GITHUB_TOKEN cannot push to another repository.
+    required: true
+  diffs-repo:
+    description: Pages repository, owner/repo.
+    required: true
+  diffs-base-url:
+    description: Public base URL of the Pages site, for example https://owner.github.io/diffs-repo.
+    required: true
+  diffs-branch:
+    description: Branch served by Pages.
+    required: false
+    default: main
+  diffs-path:
+    description: Folder inside the Pages repository (empty = repository root). Only this folder is written.
+    required: false
+    default: ""
+  applications-path:
+    description: Folder with the Application manifests (one *.yaml per application).
+    required: false
+    default: applications
+  base-sha:
+    description: Commit to compare against. Defaults to the pull request base.
+    required: false
+    default: ${{ github.event.pull_request.base.sha }}
+  helm-version:
+    description: Helm version to install.
+    required: false
+    default: v3.16.4
+  preview-lines:
+    description: Lines of the manifest diff shown inline in the comment.
+    required: false
+    default: "300"
+  keep-days:
+    description: Delete published pages older than this many days (0 keeps everything).
+    required: false
+    default: "90"
+  comment:
+    description: Post or update the PR comment.
+    required: false
+    default: "true"
+  fail-on-publish-error:
+    description: Fail the job when the HTML pages cannot be published (keep true when the job is a required check).
+    required: false
+    default: "true"
+outputs:
+  changed:
+    description: Number of changed Application files.
+    value: ${{ steps.report.outputs.changed }}
+  urls:
+    description: Public URLs of the generated HTML pages, one per line.
+    value: ${{ steps.report.outputs.urls }}
+runs:
+  using: composite
+  steps:
+    # Fork PRs get no secrets and cannot publish: succeed (a required check must not stay pending).
+    - name: Check the context
+      id: guard
+      shell: bash
+      env:
+        EVENT: ${{ github.event_name }}
+        HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        REPO: ${{ github.repository }}
+      run: |
+        set -euo pipefail
+        if [ "${EVENT}" != "pull_request" ] && [ "${EVENT}" != "pull_request_target" ]; then
+          echo "::notice::argocd-manifest-diff only runs on pull requests"
+          echo "skip=true" >> "${GITHUB_OUTPUT}"
+        elif [ "${HEAD_REPO}" != "${REPO}" ]; then
+          echo "::notice::pull request from a fork: no secrets, diff skipped"
+          echo "skip=true" >> "${GITHUB_OUTPUT}"
+        else
+          echo "skip=false" >> "${GITHUB_OUTPUT}"
+        fi
+
+    - name: Install Helm
+      if: steps.guard.outputs.skip != 'true'
+      uses: azure/setup-helm@v5
+      with:
+        version: ${{ inputs.helm-version }}
+        token: ${{ inputs.github-token }}
+
+    - name: Login to the chart registry
+      if: steps.guard.outputs.skip != 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        ACTOR: ${{ github.actor }}
+      run: echo "${GH_TOKEN}" | helm registry login ghcr.io -u "${ACTOR}" --password-stdin
+
+    - name: Build the diff report
+      id: report
+      if: steps.guard.outputs.skip != 'true'
+      shell: bash
+      env:
+        BASE_SHA: ${{ inputs.base-sha }}
+        APPLICATIONS_PATH: ${{ inputs.applications-path }}
+        DIFFS_PATH: ${{ inputs.diffs-path }}
+        DIFFS_BASE_URL: ${{ inputs.diffs-base-url }}
+        DIFF_PREVIEW_LINES: ${{ inputs.preview-lines }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        GH_TOKEN: ${{ inputs.github-token }}
+        WORK: ${{ runner.temp }}/argocd-manifest-diff
+        SCRIPTS: ${{ github.action_path }}/scripts
+      run: |
+        set -euo pipefail
+        bash "${SCRIPTS}/pr-diff.sh"
+        echo "work=${WORK}" >> "${GITHUB_OUTPUT}"
+        echo "changed=$(cat "${WORK}/changed")" >> "${GITHUB_OUTPUT}"
+        {
+          echo "urls<<EOF"
+          cat "${WORK}/urls.txt"
+          echo "EOF"
+        } >> "${GITHUB_OUTPUT}"
+
+    - name: Publish the HTML pages
+      id: publish
+      if: steps.guard.outputs.skip != 'true' && steps.report.outputs.urls != ''
+      continue-on-error: true
+      shell: bash
+      env:
+        DIFFS_REPO: ${{ inputs.diffs-repo }}
+        DIFFS_BRANCH: ${{ inputs.diffs-branch }}
+        DIFFS_PATH: ${{ inputs.diffs-path }}
+        DIFFS_TOKEN: ${{ inputs.diffs-token }}
+        KEEP_DAYS: ${{ inputs.keep-days }}
+        WORK: ${{ steps.report.outputs.work }}
+        SCRIPTS: ${{ github.action_path }}/scripts
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+      run: |
+        set -euo pipefail
+        [ -n "${DIFFS_TOKEN}" ] || { echo "::error::diffs-token is empty (BOT_TOKEN secret missing?)"; exit 1; }
+        bash "${SCRIPTS}/publish-pages.sh" "${WORK}/pages" "docs: diff pages for ${GITHUB_REPOSITORY}#${PR_NUMBER}"
+
+    # Pages needs a moment to serve a new page: wait for each URL, never fail on a timeout.
+    - name: Wait for the pages
+      if: steps.publish.outcome == 'success'
+      shell: bash
+      env:
+        URLS: ${{ steps.report.outputs.urls }}
+      run: |
+        while read -r url; do
+          [ -n "${url}" ] || continue
+          ok=false
+          for _ in $(seq 1 24); do
+            if curl -fsI "${url}" >/dev/null 2>&1; then ok=true; break; fi
+            sleep 5
+          done
+          [ "${ok}" = "true" ] || echo "::warning::${url} is not served yet (Pages can take a few minutes)"
+        done <<<"${URLS}"
+
+    - name: Drop the page links when publishing failed
+      if: steps.publish.outcome == 'failure'
+      shell: bash
+      env:
+        WORK: ${{ steps.report.outputs.work }}
+      run: |
+        set -euo pipefail
+        sed -i '/Open the side-by-side diff/d' "${WORK}/comment.md"
+        printf '\n_HTML diff pages were not published (see the "Publish the HTML pages" step)._\n' >> "${WORK}/comment.md"
+
+    - name: Comment on the pull request
+      if: steps.guard.outputs.skip != 'true' && inputs.comment == 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        WORK: ${{ steps.report.outputs.work }}
+        CHANGED: ${{ steps.report.outputs.changed }}
+      run: |
+        set -euo pipefail
+        cp "${WORK}/comment.md" "${GITHUB_STEP_SUMMARY}"
+        id=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" --paginate \
+               --jq '.[] | select(.body | contains("<!-- argocd-manifest-diff -->")) | .id' | head -n 1)
+        if [ -n "${id}" ]; then
+          gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${id}" -F body=@"${WORK}/comment.md" >/dev/null
+        elif [ "${CHANGED}" != "0" ]; then
+          # No comment when no Application changed, unless an old one has to be refreshed.
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" -F body=@"${WORK}/comment.md" >/dev/null
+        fi
+
+    - name: Fail when publishing failed
+      if: steps.publish.outcome == 'failure' && inputs.fail-on-publish-error == 'true'
+      shell: bash
+      run: |
+        echo "::error::the HTML diff pages could not be published (check diffs-token, diffs-repo, diffs-branch)"
+        exit 1

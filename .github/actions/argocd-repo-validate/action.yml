@@ -1,0 +1,74 @@
+name: argocd-repo-validate
+description: >-
+  Validate a GitOps repository of ArgoCD Applications: yamllint (bundled config), policy checks on the
+  Application manifests (kind, name equals file name, finalizer, pinned targetRevision, no inline secrets,
+  automated sync) and kubeconform (with the ArgoCD CRD schemas). Run it after actions/checkout.
+inputs:
+  applications-path:
+    description: Folder with the Application manifests (one *.yaml per application).
+    required: false
+    default: applications
+  paths:
+    description: Space separated folders to lint and schema-check.
+    required: false
+    default: applications infra-services
+  kubernetes-version:
+    description: Kubernetes version for kubeconform.
+    required: false
+    default: 1.31.0
+  kubeconform-version:
+    description: kubeconform release.
+    required: false
+    default: v0.6.7
+  yamllint-version:
+    description: yamllint version.
+    required: false
+    default: 1.35.1
+runs:
+  using: composite
+  steps:
+    - name: Install tools
+      shell: bash
+      env:
+        KUBECONFORM_VERSION: ${{ inputs.kubeconform-version }}
+        YAMLLINT_VERSION: ${{ inputs.yamllint-version }}
+      run: |
+        set -euo pipefail
+        pip install --quiet "yamllint==${YAMLLINT_VERSION}"
+        mkdir -p "${RUNNER_TEMP}/bin"
+        curl -fsSL "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" \
+          | tar xz -C "${RUNNER_TEMP}/bin" kubeconform
+        echo "${RUNNER_TEMP}/bin" >> "${GITHUB_PATH}"
+
+    - name: yamllint
+      shell: bash
+      env:
+        PATHS: ${{ inputs.paths }}
+        CONFIG: ${{ github.action_path }}/yamllint.yaml
+      run: |
+        set -euo pipefail
+        existing=()
+        for p in ${PATHS}; do [ -e "${p}" ] && existing+=("${p}"); done
+        [ "${#existing[@]}" -eq 0 ] || yamllint --strict -c "${CONFIG}" "${existing[@]}"
+
+    - name: Application policy
+      shell: bash
+      env:
+        APPLICATIONS_PATH: ${{ inputs.applications-path }}
+        SCRIPTS: ${{ github.action_path }}/scripts
+      run: bash "${SCRIPTS}/check-applications.sh"
+
+    - name: kubeconform
+      shell: bash
+      env:
+        PATHS: ${{ inputs.paths }}
+        KUBERNETES_VERSION: ${{ inputs.kubernetes-version }}
+      run: |
+        set -euo pipefail
+        existing=()
+        for p in ${PATHS}; do [ -e "${p}" ] && existing+=("${p}"); done
+        [ "${#existing[@]}" -eq 0 ] || kubeconform -strict -summary -ignore-missing-schemas \
+          -kubernetes-version "${KUBERNETES_VERSION}" \
+          -schema-location default \
+          -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+          "${existing[@]}"
