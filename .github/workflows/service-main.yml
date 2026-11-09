@@ -1,0 +1,91 @@
+name: Service main
+
+# Merge flow (push to the default branch -> environments whose workflows list contains "main", normally dev):
+# checks, push image and chart as 1.<YYYYMMDD>.<run>-main-<short-sha>, then a deployment PR per environment.
+# Caller:
+#   on: { push: { branches: [main] } }
+#   permissions: { contents: read, packages: write }
+#   jobs:
+#     main:
+#       uses: huponx/actions/.github/workflows/service-main.yml@v1
+#       with: { deploy-app-id: ${{ vars.DEPLOY_APP_ID }} }    # optional, otherwise BOT_TOKEN
+#       secrets: inherit
+on:
+  workflow_call:
+    inputs:
+      config-path:
+        description: Path of the CI contract in the service repository.
+        type: string
+        default: .github/config/ci.yaml
+      go-version:
+        type: string
+        default: "1.26"
+      deploy-app-id:
+        description: Id of a GitHub App for the deployment repositories (empty = BOT_TOKEN).
+        type: string
+        default: ""
+      sarif:
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      apps: ${{ steps.contract.outputs.apps }}
+    steps:
+      - uses: actions/checkout@v5
+      - id: contract
+        uses: huponx/actions/.github/actions/retrieve-contract@v1
+        with:
+          config-path: ${{ inputs.config-path }}
+
+  lint-test:
+    needs: contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: huponx/actions/.github/actions/lang-setup@v1
+        with:
+          lang: go
+          go-version: ${{ inputs.go-version }}
+      - run: go vet ./...
+      - run: go test ./...
+      - name: golangci-lint
+        if: hashFiles('.golangci.yml', '.golangci.yaml', '.golangci.toml') != ''
+        uses: golangci/golangci-lint-action@v8
+
+  version:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - id: v
+        run: echo "version=1.$(date -u +%Y%m%d).${GITHUB_RUN_NUMBER}-main-${GITHUB_SHA:0:7}" >> "${GITHUB_OUTPUT}"
+
+  build:
+    needs: [contract, lint-test, version]
+    uses: huponx/actions/.github/workflows/service-build.yml@v1
+    with:
+      apps: ${{ needs.contract.outputs.apps }}
+      version: ${{ needs.version.outputs.version }}
+      push: true
+      sarif: ${{ inputs.sarif }}
+    secrets: inherit
+
+  deploy:
+    needs: [version, build]
+    uses: huponx/actions/.github/workflows/service-deploy.yml@v1
+    with:
+      flow: main
+      version: ${{ needs.version.outputs.version }}
+      config-path: ${{ inputs.config-path }}
+      deploy-app-id: ${{ inputs.deploy-app-id }}
+    secrets: inherit

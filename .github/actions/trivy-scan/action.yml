@@ -39,6 +39,14 @@ inputs:
     description: Comma separated severities that fail the step when present (empty never fails on findings).
     required: false
     default: ""
+  ignorefile:
+    description: Path of a .trivyignore file (empty = Trivy's default lookup of .trivyignore in the working directory).
+    required: false
+    default: ""
+  sarif:
+    description: Also write trivy.sarif (for github/codeql-action/upload-sarif) next to the other reports.
+    required: false
+    default: "false"
   summary:
     description: Write a severity table to the job summary.
     required: false
@@ -50,6 +58,9 @@ outputs:
   report:
     description: Path of the raw Trivy JSON report.
     value: ${{ steps.scan.outputs.report }}
+  sarif:
+    description: Path of the SARIF report (empty unless the sarif input is true).
+    value: ${{ steps.scan.outputs.sarif }}
   total:
     description: Number of vulnerabilities.
     value: ${{ steps.scan.outputs.total }}
@@ -83,6 +94,8 @@ runs:
         IGNORE_UNFIXED: ${{ inputs.ignore-unfixed }}
         TIMEOUT: ${{ inputs.timeout }}
         OUTPUT_DIR: ${{ inputs.output-dir }}
+        IGNOREFILE: ${{ inputs.ignorefile }}
+        SARIF: ${{ inputs.sarif }}
         TRIVY_USERNAME: ${{ inputs.registry-username }}
         TRIVY_PASSWORD: ${{ inputs.registry-password }}
         SCRIPTS: ${{ github.action_path }}/scripts
@@ -94,11 +107,18 @@ runs:
         args=(image --quiet --scanners vuln --format json --output "${dir}/trivy-raw.json"
               --severity "${SEVERITY}" --timeout "${TIMEOUT}")
         [ "${IGNORE_UNFIXED}" != "true" ] || args+=(--ignore-unfixed)
+        [ -z "${IGNOREFILE}" ] || args+=(--ignorefile "${IGNOREFILE}")
         trivy "${args[@]}" "${IMAGE}"
+        sarif_file=""
+        if [ "${SARIF}" = "true" ]; then
+          sarif_file="${dir}/trivy.sarif"
+          trivy convert --format sarif --output "${sarif_file}" "${dir}/trivy-raw.json"
+        fi
         counts=$(bash "${SCRIPTS}/normalize.sh" "${dir}/trivy-raw.json" "${dir}/vulnerabilities.json")
         {
           echo "vulnerabilities=${dir}/vulnerabilities.json"
           echo "report=${dir}/trivy-raw.json"
+          echo "sarif=${sarif_file}"
           echo "${counts}"
         } >> "${GITHUB_OUTPUT}"
         echo "${counts}"

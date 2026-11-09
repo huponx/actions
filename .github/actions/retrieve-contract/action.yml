@@ -1,0 +1,32 @@
+name: retrieve-contract
+description: >-
+  Read and validate the service CI contract (.github/config/ci.yaml): unknown or missing keys fail the job,
+  and the apps and environments come out as JSON for strategy.matrix.
+inputs:
+  config-path:
+    description: Path of the contract in the checked out repository.
+    required: false
+    default: .github/config/ci.yaml
+outputs:
+  apps:
+    description: JSON array of apps (name, language, image-name, dockerfile-path, chart-path, image-tag-paths, trivy-severity, trivy-ignore-unfixed, trivy-fail).
+    value: ${{ steps.contract.outputs.apps }}
+  environments:
+    description: JSON array of the environment names declared under global.environments.
+    value: ${{ steps.contract.outputs.environments }}
+  count:
+    description: Number of apps.
+    value: ${{ steps.contract.outputs.count }}
+runs:
+  using: composite
+  steps:
+    - name: Validate the contract
+      id: contract
+      shell: bash
+      env:
+        CONFIG: ${{ inputs.config-path }}
+        SCRIPTS: ${{ github.action_path }}/scripts
+      run: |
+        set -euo pipefail
+        bash "${SCRIPTS}/retrieve.sh" "${CONFIG}" >> "${GITHUB_OUTPUT}"
+        cat "${GITHUB_OUTPUT}" | tail -n 3

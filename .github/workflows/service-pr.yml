@@ -1,0 +1,76 @@
+name: Service PR
+
+# Pull request flow: lint, test, build, Trivy scan and chart checks. Nothing is pushed.
+# Caller (the service repository):
+#   on: { pull_request: { branches: [main] } }
+#   permissions: { contents: read, packages: write }
+#   jobs: { pr: { uses: huponx/actions/.github/workflows/service-pr.yml@v1, secrets: inherit } }
+on:
+  workflow_call:
+    inputs:
+      config-path:
+        description: Path of the CI contract in the service repository.
+        type: string
+        default: .github/config/ci.yaml
+      go-version:
+        type: string
+        default: "1.26"
+      sarif:
+        description: Upload the Trivy SARIF report (caller needs security-events write and code scanning).
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      apps: ${{ steps.contract.outputs.apps }}
+    steps:
+      - uses: actions/checkout@v5
+      - id: contract
+        uses: huponx/actions/.github/actions/retrieve-contract@v1
+        with:
+          config-path: ${{ inputs.config-path }}
+
+  lint-test:
+    needs: contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: huponx/actions/.github/actions/lang-setup@v1
+        with:
+          lang: go
+          go-version: ${{ inputs.go-version }}
+      - run: go vet ./...
+      - run: go test ./...
+      - name: golangci-lint
+        if: hashFiles('.golangci.yml', '.golangci.yaml', '.golangci.toml') != ''
+        uses: golangci/golangci-lint-action@v8
+
+  version:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - id: v
+        env:
+          PR: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: echo "version=1.$(date -u +%Y%m%d).${GITHUB_RUN_NUMBER}-pr${PR}-${SHA:0:7}" >> "${GITHUB_OUTPUT}"
+
+  build:
+    needs: [contract, lint-test, version]
+    uses: huponx/actions/.github/workflows/service-build.yml@v1
+    with:
+      apps: ${{ needs.contract.outputs.apps }}
+      version: ${{ needs.version.outputs.version }}
+      push: false
+      sarif: ${{ inputs.sarif }}
+    secrets: inherit

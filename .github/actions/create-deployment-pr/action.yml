@@ -1,0 +1,85 @@
+name: create-deployment-pr
+description: >-
+  Open or update a pull request in a deployment repository that sets a release version in one file with yq
+  (default: .spec.source.targetRevision of an ArgoCD Application). Branch deploy/<app>/<env>/<version>,
+  idempotent, closes the older open PRs of the same app and env, optional labels (for example automerge),
+  reviewers, auto-merge and Slack message.
+inputs:
+  token:
+    description: Token with contents and pull-requests write on the deployment repository (GitHub App token or PAT; GITHUB_TOKEN cannot write to another repository).
+    required: true
+  repo:
+    description: Deployment repository, owner/name.
+    required: true
+  file:
+    description: File to edit, relative to the repository root, for example applications/dev/courier.yaml.
+    required: true
+  version:
+    description: Release version written into the file.
+    required: true
+  app:
+    description: Application name (branch and title).
+    required: true
+  env:
+    description: Environment name (branch and title).
+    required: true
+  base-branch:
+    description: Base branch.
+    required: false
+    default: main
+  set:
+    description: JSON array of yq paths that receive the version.
+    required: false
+    default: '[".spec.source.targetRevision"]'
+  reviewers:
+    description: JSON array of reviewers (a failed request only warns).
+    required: false
+    default: "[]"
+  labels:
+    description: JSON array of labels, created when missing (for example ["automerge"]).
+    required: false
+    default: "[]"
+  automerge:
+    description: Run gh pr merge --auto --squash (needs auto-merge enabled on the repository).
+    required: false
+    default: "false"
+  slack-webhook-url:
+    description: Optional Slack incoming webhook for a one-line message.
+    required: false
+    default: ""
+outputs:
+  pr-url:
+    description: URL of the created or updated PR (empty when the file already had the version).
+    value: ${{ steps.pr.outputs.pr-url }}
+  branch:
+    description: Deployment branch.
+    value: ${{ steps.pr.outputs.branch }}
+  changed:
+    description: false when the base branch already had the version.
+    value: ${{ steps.pr.outputs.changed }}
+runs:
+  using: composite
+  steps:
+    - name: Open or update the deployment PR
+      id: pr
+      shell: bash
+      env:
+        TOKEN: ${{ inputs.token }}
+        REPO: ${{ inputs.repo }}
+        FILE: ${{ inputs.file }}
+        VERSION: ${{ inputs.version }}
+        APP: ${{ inputs.app }}
+        ENV_NAME: ${{ inputs.env }}
+        BASE_BRANCH: ${{ inputs.base-branch }}
+        SET: ${{ inputs.set }}
+        REVIEWERS: ${{ inputs.reviewers }}
+        LABELS: ${{ inputs.labels }}
+        AUTOMERGE: ${{ inputs.automerge }}
+        SLACK_WEBHOOK_URL: ${{ inputs.slack-webhook-url }}
+        SOURCE_REPO: ${{ github.repository }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        SCRIPTS: ${{ github.action_path }}/scripts
+      run: |
+        set -euo pipefail
+        [ -n "${TOKEN}" ] || { echo "::error::token is empty (BOT_TOKEN or GitHub App token missing?)"; exit 1; }
+        bash "${SCRIPTS}/deploy-pr.sh" | tee -a "${GITHUB_OUTPUT}"

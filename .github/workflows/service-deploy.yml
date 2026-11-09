@@ -1,0 +1,94 @@
+name: Service deploy
+
+# Internal building block of service-main, service-staging and service-production: resolve the deployment
+# targets of one flow from the contract, then open (or update) one PR per app and environment.
+on:
+  workflow_call:
+    inputs:
+      flow:
+        description: main, staging or production (matched against `workflows` of each environment).
+        type: string
+        required: true
+      version:
+        type: string
+        required: true
+      config-path:
+        type: string
+        default: .github/config/ci.yaml
+      deploy-app-id:
+        description: Id of a GitHub App with write access to the deployment repositories (empty = use BOT_TOKEN).
+        type: string
+        default: ""
+    secrets:
+      BOT_TOKEN:
+        description: PAT with contents and pull-requests write on the deployment repositories.
+        required: false
+      DEPLOY_APP_PRIVATE_KEY:
+        description: Private key of the GitHub App (with deploy-app-id).
+        required: false
+      SLACK_WEBHOOK_URL:
+        description: Optional Slack incoming webhook.
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+      count: ${{ steps.resolve.outputs.count }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Resolve the targets
+        id: resolve
+        uses: huponx/actions/.github/actions/resolve-env-config@v1
+        with:
+          config-path: ${{ inputs.config-path }}
+          flow: ${{ inputs.flow }}
+          version: ${{ inputs.version }}
+      - name: Matrix
+        id: matrix
+        env:
+          TARGETS: ${{ steps.resolve.outputs.targets }}
+        run: |
+          echo "matrix=$(jq -c '{include: .}' <<<"${TARGETS}")" >> "${GITHUB_OUTPUT}"
+
+  deploy:
+    name: deploy (${{ matrix.app }}, ${{ matrix.env }})
+    needs: prepare
+    if: needs.prepare.outputs.count != '0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    steps:
+      - name: GitHub App token
+        id: app
+        if: inputs.deploy-app-id != ''
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ inputs.deploy-app-id }}
+          private-key: ${{ secrets.DEPLOY_APP_PRIVATE_KEY }}
+          owner: ${{ matrix.repo-owner }}
+          repositories: ${{ matrix.repo-name }}
+
+      - name: Open or update the deployment PR
+        uses: huponx/actions/.github/actions/create-deployment-pr@v1
+        with:
+          token: ${{ steps.app.outputs.token || secrets.BOT_TOKEN }}
+          repo: ${{ matrix.repo }}
+          base-branch: ${{ matrix.base-branch }}
+          file: ${{ matrix.file }}
+          set: ${{ toJSON(matrix.set) }}
+          version: ${{ inputs.version }}
+          app: ${{ matrix.app }}
+          env: ${{ matrix.env }}
+          reviewers: ${{ toJSON(matrix.reviewers) }}
+          labels: ${{ toJSON(matrix.labels) }}
+          automerge: ${{ matrix.automerge }}
+          slack-webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}

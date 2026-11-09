@@ -109,3 +109,6 @@ jobs:
           bash tests/argocd-manifest-diff.sh
           bash tests/trivy-scan.sh
           bash tests/argocd-cve.sh
+          bash tests/service-contract.sh
+          bash tests/service-build.sh
+          bash tests/service-release.sh

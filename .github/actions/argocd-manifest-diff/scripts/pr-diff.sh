@@ -5,7 +5,7 @@
 #
 # Environment:
 #   BASE_SHA          commit to compare against (required)
-#   APPLICATIONS_PATH folder with the Application manifests (default applications)
+#   APPLICATIONS_PATH folder with the Application manifests (default applications; layout <env>/<app>.yaml)
 #   WORK              work dir (default .diff-work)
 #   DIFFS_PATH        folder inside the pages repo (default empty)
 #   DIFFS_BASE_URL    public base URL of the pages site (required to print HTML links)
@@ -51,7 +51,7 @@ if [ "${#files[@]}" -eq 0 ]; then
 fi
 
 for f in "${files[@]}"; do
-  app=$(basename "${f}" .yaml)
+  app="${f#"${apps_path}"/}"; app="${app%.yaml}"   # <env>/<app>
   dir="${work}/${app}"
   mkdir -p "${dir}"
 

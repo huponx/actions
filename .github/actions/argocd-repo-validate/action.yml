@@ -5,7 +5,7 @@ description: >-
   automated sync) and kubeconform (with the ArgoCD CRD schemas). Run it after actions/checkout.
 inputs:
   applications-path:
-    description: Folder with the Application manifests (one *.yaml per application).
+    description: Folder with the Application manifests (<env>/<app>.yaml, env = dev, staging or production).
     required: false
     default: applications
   paths:

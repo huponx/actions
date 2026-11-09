@@ -1,0 +1,94 @@
+name: Service production
+
+# Production flow (release published): no build. The version is the release tag; the image and the chart
+# of that version must already exist in ghcr.io (pushed by the staging flow), otherwise the flow fails.
+# Then a deployment PR per environment whose workflows list contains "production".
+# Caller:
+#   on: { release: { types: [released] } }
+#   permissions: { contents: read, packages: read }
+#   jobs: { production: { uses: huponx/actions/.github/workflows/service-production.yml@v1, secrets: inherit } }
+on:
+  workflow_call:
+    inputs:
+      config-path:
+        description: Path of the CI contract in the service repository.
+        type: string
+        default: .github/config/ci.yaml
+      version:
+        description: Version to promote (default is the tag of the release that triggered the flow).
+        type: string
+        default: ""
+      deploy-app-id:
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      apps: ${{ steps.contract.outputs.apps }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+      - id: contract
+        uses: huponx/actions/.github/actions/retrieve-contract@v1
+        with:
+          config-path: ${{ inputs.config-path }}
+      - id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          v="${INPUT_VERSION:-${RELEASE_TAG}}"
+          [ -n "${v}" ] || { echo "::error::no version: run on a release or pass the version input"; exit 1; }
+          echo "version=${v}" >> "${GITHUB_OUTPUT}"
+
+  verify:
+    name: verify (${{ matrix.app.name }})
+    needs: contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJSON(needs.contract.outputs.apps) }}
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: azure/setup-helm@v5
+        with:
+          version: v3.16.4
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: The image and the chart must exist
+        env:
+          VERSION: ${{ needs.contract.outputs.version }}
+          IMAGE_NAME: ${{ matrix.app.image-name }}
+          CHART_PATH: ${{ matrix.app.chart-path }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          chart="$(basename "${CHART_PATH}")"
+          echo "${GH_TOKEN}" | helm registry login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
+          docker buildx imagetools inspect "ghcr.io/${owner}/${IMAGE_NAME}:${VERSION}" > /dev/null \
+            || { echo "::error::image ghcr.io/${owner}/${IMAGE_NAME}:${VERSION} not found: promote a version the staging flow built"; exit 1; }
+          helm show chart "oci://ghcr.io/${owner}/charts/${chart}" --version "${VERSION}" > /dev/null \
+            || { echo "::error::chart oci://ghcr.io/${owner}/charts/${chart}:${VERSION} not found"; exit 1; }
+
+  deploy:
+    needs: [contract, verify]
+    uses: huponx/actions/.github/workflows/service-deploy.yml@v1
+    with:
+      flow: production
+      version: ${{ needs.contract.outputs.version }}
+      config-path: ${{ inputs.config-path }}
+      deploy-app-id: ${{ inputs.deploy-app-id }}
+    secrets: inherit

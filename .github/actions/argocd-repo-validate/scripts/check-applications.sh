@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Policy checks for ArgoCD Application manifests in applications/ and infra-services/.
-#   scripts/check-applications.sh [file...]    (default: $APPLICATIONS_PATH/*.yaml, APPLICATIONS_PATH=applications)
+#   scripts/check-applications.sh [file...]    (default: $APPLICATIONS_PATH/<env>/*.yaml, APPLICATIONS_PATH=applications)
 set -euo pipefail
 
 command -v yq >/dev/null || { echo "yq is required" >&2; exit 2; }
@@ -8,15 +8,21 @@ command -v yq >/dev/null || { echo "yq is required" >&2; exit 2; }
 files=("$@")
 if [ "${#files[@]}" -eq 0 ]; then
   shopt -s nullglob
-  files=("${APPLICATIONS_PATH:-applications}"/*.yaml)
+  files=("${APPLICATIONS_PATH:-applications}"/*/*.yaml)
+  # Files directly under applications/ are not allowed: every Application belongs to an environment.
+  for stray in "${APPLICATIONS_PATH:-applications}"/*.yaml; do
+    echo "::error file=${stray}::Application must live in applications/<env>/ (dev, staging or production)"; stray_fail=1
+  done
 fi
 
-fail=0
+fail=${stray_fail:-0}
 err() { echo "::error file=$1::$2"; fail=1; }
 
 for f in "${files[@]}"; do
   [ -f "${f}" ] || { err "${f}" "file not found"; continue; }
   base=$(basename "${f}" .yaml)
+  env_dir=$(basename "$(dirname "${f}")")
+  case "${env_dir}" in dev|staging|production) ;; *) err "${f}" "environment folder '${env_dir}' must be dev, staging or production" ;; esac
 
   [ "$(yq '.kind' "${f}")" = "Application" ] || err "${f}" "kind must be Application"
   [ "$(yq '.apiVersion' "${f}")" = "argoproj.io/v1alpha1" ] || err "${f}" "apiVersion must be argoproj.io/v1alpha1"
