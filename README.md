@@ -16,6 +16,7 @@ Shared composite GitHub Actions. Reference them from any repo of the owner:
 | [`lang-setup`](.github/actions/lang-setup/action.yml) | install the toolchain and caches for `go`, `java`, `scala` or `rust` |
 | [`lang-compile`](.github/actions/lang-compile/action.yml) | compile a project: `go build`, `mvn compile`, `sbt compile`, `cargo check` |
 | [`trivy-scan`](.github/actions/trivy-scan/action.yml) | scan a container image for CVEs with Trivy and write a normalised JSON list (id, package, installed/fixed version, severity); optional fail on severity |
+| [`pr-comment`](.github/actions/pr-comment/action.yml) | create or update one sticky PR comment found by a marker; skips forks, warns instead of failing by default (used by the CVE and cluster diff comments) |
 | [`retrieve-contract`](.github/actions/retrieve-contract/action.yml) | read and validate `.github/config/ci.yaml` (unknown keys fail), output the apps matrix |
 | [`resolve-env-config`](.github/actions/resolve-env-config/action.yml) | deep-merge `global.deploy`, the environment block and the app override into deployment targets for one flow |
 | [`docker-build-scan-push`](.github/actions/docker-build-scan-push/action.yml) | buildx amd64 build, Trivy scan, push to `ghcr.io/<owner>/<image>:<version>` only after a passing scan |

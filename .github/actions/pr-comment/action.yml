@@ -1,0 +1,50 @@
+name: pr-comment
+description: >-
+  Create or update one sticky comment on a pull request. The comment is found by a marker string (for example
+  an HTML comment such as <!-- cve-diff -->) that must be part of the body, so every push edits the same
+  comment instead of adding a new one. Skips fork pull requests (read-only token) and never fails the job
+  by default.
+inputs:
+  body-file:
+    description: File with the markdown body. It must contain the marker.
+    required: true
+  marker:
+    description: Text that identifies the comment, for example `<!-- trivy-image:courier -->`.
+    required: true
+  github-token:
+    description: Token with pull-requests (or issues) write. Normally secrets.GITHUB_TOKEN.
+    required: true
+  pr-number:
+    description: Pull request number (default is the pull request of the event).
+    required: false
+    default: ${{ github.event.pull_request.number }}
+  create:
+    description: >-
+      Create the comment when none exists. Set to false to only refresh an existing comment (for example when
+      there is nothing to report).
+    required: false
+    default: "true"
+  fail-on-error:
+    description: Fail the step when the comment cannot be written (default only warns).
+    required: false
+    default: "false"
+outputs:
+  action:
+    description: created, updated or skipped.
+    value: ${{ steps.comment.outputs.action }}
+runs:
+  using: composite
+  steps:
+    - name: Comment
+      id: comment
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        BODY_FILE: ${{ inputs.body-file }}
+        MARKER: ${{ inputs.marker }}
+        PR_NUMBER: ${{ inputs.pr-number }}
+        CREATE: ${{ inputs.create }}
+        FAIL_ON_ERROR: ${{ inputs.fail-on-error }}
+        IS_FORK: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+        SCRIPTS: ${{ github.action_path }}/scripts
+      run: bash "${SCRIPTS}/comment.sh" >> "${GITHUB_OUTPUT}"
