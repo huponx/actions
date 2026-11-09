@@ -22,14 +22,17 @@ on:
         description: Upload the Trivy SARIF report to code scanning (needs security-events write).
         type: boolean
         default: false
+      comment:
+        description: Comment the CVEs of each image on the pull request (needs pull-requests write in the caller).
+        type: boolean
+        default: false
       trivyignore:
         description: Path of a .trivyignore file in the service repository.
         type: string
         default: ""
 
-permissions:
-  contents: read
-  packages: write
+# No permissions block: the job inherits the caller's (contents read, packages write, and pull-requests write
+# when the CVE comment is wanted). A reusable workflow cannot ask for more than its caller grants.
 
 jobs:
   build:
@@ -69,6 +72,7 @@ jobs:
           fail-on-vulnerabilities: ${{ matrix.app.trivy-fail }}
           trivyignore: ${{ inputs.trivyignore }}
           sarif: ${{ inputs.sarif }}
+          comment: ${{ inputs.comment }}
 
       - name: Package and push the chart
         uses: huponx/actions/.github/actions/helm-package-push@v1
