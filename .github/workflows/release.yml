@@ -1,6 +1,6 @@
 name: Release
 
-# Every merge to main that changes an action is released:
+# Every merge to main that changes an action or a reusable service-* workflow is released:
 #   - semver tag vX.Y.Z + GitHub Release
 #   - floating major tag vX moved to the same commit, so consumers can use @vX
 # The bump comes from conventional commits since the previous release:
@@ -10,6 +10,7 @@ on:
     branches: [main]
     paths:
       - ".github/actions/**"
+      - ".github/workflows/service-*.yml"
   workflow_dispatch:
     inputs:
       bump:

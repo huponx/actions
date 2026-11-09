@@ -1,0 +1,24 @@
+name: update-chart-metadata
+description: Set version and appVersion in a Helm chart's Chart.yaml (done in the workspace before packaging, never committed).
+inputs:
+  chart-path:
+    description: Chart directory.
+    required: true
+  version:
+    description: Chart version.
+    required: true
+  app-version:
+    description: appVersion (defaults to version).
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    - name: Update Chart.yaml
+      shell: bash
+      env:
+        CHART: ${{ inputs.chart-path }}
+        VERSION: ${{ inputs.version }}
+        APP_VERSION: ${{ inputs.app-version }}
+        SCRIPTS: ${{ github.action_path }}/scripts
+      run: bash "${SCRIPTS}/update.sh" "${CHART}" "${VERSION}" ${APP_VERSION:+"${APP_VERSION}"}

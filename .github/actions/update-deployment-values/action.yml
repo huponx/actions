@@ -1,0 +1,33 @@
+name: update-deployment-values
+description: Write the released image tag into a chart's values.yaml at the configured yq paths, so the packaged chart deploys that image.
+inputs:
+  chart-path:
+    description: Chart directory.
+    required: true
+  tag:
+    description: Image tag.
+    required: true
+  image-tag-paths:
+    description: 'JSON array of yq paths, for example [".application.deployment.container.image.tag"].'
+    required: true
+  repository-path:
+    description: Optional yq path of the image repository to set as well.
+    required: false
+    default: ""
+  repository:
+    description: Image repository written at repository-path.
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    - name: Update values.yaml
+      shell: bash
+      env:
+        CHART: ${{ inputs.chart-path }}
+        TAG: ${{ inputs.tag }}
+        PATHS: ${{ inputs.image-tag-paths }}
+        REPO_PATH: ${{ inputs.repository-path }}
+        REPO: ${{ inputs.repository }}
+        SCRIPTS: ${{ github.action_path }}/scripts
+      run: bash "${SCRIPTS}/update.sh" "${CHART}" "${TAG}" "${PATHS}" "${REPO_PATH}" "${REPO}"

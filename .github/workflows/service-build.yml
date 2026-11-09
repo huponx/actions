@@ -1,0 +1,79 @@
+name: Service build
+
+# Internal building block of service-pr, service-main and service-staging: per app of the contract,
+# write the version into the chart, build the amd64 image, scan it with Trivy, push the image only after a
+# passing scan, then lint, package and push the chart. With push=false nothing is published.
+on:
+  workflow_call:
+    inputs:
+      apps:
+        description: JSON array of apps (output apps of retrieve-contract).
+        type: string
+        required: true
+      version:
+        description: Image tag and chart version.
+        type: string
+        required: true
+      push:
+        description: Publish the image and the chart to ghcr.io.
+        type: boolean
+        default: false
+      sarif:
+        description: Upload the Trivy SARIF report to code scanning (needs security-events write).
+        type: boolean
+        default: false
+      trivyignore:
+        description: Path of a .trivyignore file in the service repository.
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    name: build (${{ matrix.app.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJSON(inputs.apps) }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Write the version into the chart
+        uses: huponx/actions/.github/actions/update-chart-metadata@v1
+        with:
+          chart-path: ${{ matrix.app.chart-path }}
+          version: ${{ inputs.version }}
+
+      - name: Write the image tag into the chart values
+        uses: huponx/actions/.github/actions/update-deployment-values@v1
+        with:
+          chart-path: ${{ matrix.app.chart-path }}
+          tag: ${{ inputs.version }}
+          image-tag-paths: ${{ toJSON(matrix.app.image-tag-paths) }}
+
+      - name: Build, scan and push the image
+        uses: huponx/actions/.github/actions/docker-build-scan-push@v1
+        with:
+          image-name: ${{ matrix.app.image-name }}
+          version: ${{ inputs.version }}
+          dockerfile: ${{ matrix.app.dockerfile-path }}
+          push: ${{ inputs.push }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          severity: ${{ matrix.app.trivy-severity }}
+          ignore-unfixed: ${{ matrix.app.trivy-ignore-unfixed }}
+          fail-on-vulnerabilities: ${{ matrix.app.trivy-fail }}
+          trivyignore: ${{ inputs.trivyignore }}
+          sarif: ${{ inputs.sarif }}
+
+      - name: Package and push the chart
+        uses: huponx/actions/.github/actions/helm-package-push@v1
+        with:
+          chart-path: ${{ matrix.app.chart-path }}
+          version: ${{ inputs.version }}
+          push: ${{ inputs.push }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}

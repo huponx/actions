@@ -16,6 +16,13 @@ Shared composite GitHub Actions. Reference them from any repo of the owner:
 | [`lang-setup`](.github/actions/lang-setup/action.yml) | install the toolchain and caches for `go`, `java`, `scala` or `rust` |
 | [`lang-compile`](.github/actions/lang-compile/action.yml) | compile a project: `go build`, `mvn compile`, `sbt compile`, `cargo check` |
 | [`trivy-scan`](.github/actions/trivy-scan/action.yml) | scan a container image for CVEs with Trivy and write a normalised JSON list (id, package, installed/fixed version, severity); optional fail on severity |
+| [`retrieve-contract`](.github/actions/retrieve-contract/action.yml) | read and validate `.github/config/ci.yaml` (unknown keys fail), output the apps matrix |
+| [`resolve-env-config`](.github/actions/resolve-env-config/action.yml) | deep-merge `global.deploy`, the environment block and the app override into deployment targets for one flow |
+| [`docker-build-scan-push`](.github/actions/docker-build-scan-push/action.yml) | buildx amd64 build, Trivy scan, push to `ghcr.io/<owner>/<image>:<version>` only after a passing scan |
+| [`update-chart-metadata`](.github/actions/update-chart-metadata/action.yml), [`update-deployment-values`](.github/actions/update-deployment-values/action.yml) | write `version`/`appVersion` and the image tag into a chart before packaging |
+| [`helm-package-push`](.github/actions/helm-package-push/action.yml) | dependency build, lint, template, optional unittest, package, push to `oci://ghcr.io/<owner>/charts` (never overwrites a version) |
+| [`create-prerelease`](.github/actions/create-prerelease/action.yml) | staging pre-release `v<YYYY>.<MM>.N-release-<short-sha>` (N only grows after the previous one was published) |
+| [`create-deployment-pr`](.github/actions/create-deployment-pr/action.yml) | open or update a PR in the deployment repository that sets the version with yq; labels (for example `automerge`), reviewers, auto-merge, Slack |
 | [`argocd-repo-validate`](.github/actions/argocd-repo-validate/action.yml) | GitOps repo of ArgoCD Applications: yamllint (bundled config), policy checks, kubeconform with the ArgoCD CRD schemas |
 | [`argocd-cve-plan`](.github/actions/argocd-cve-plan/action.yml) | PR: render old and new chart revisions of changed Applications, output a matrix of the images to scan |
 | [`argocd-cve-report`](.github/actions/argocd-cve-report/action.yml) | PR: compare the scans of the old and the new image, sticky comment with NEW and removed CVEs, optional gate |
@@ -24,6 +31,54 @@ Shared composite GitHub Actions. Reference them from any repo of the owner:
 Both take `lang` and `root` (the directory of the language project, default `.`). `lang-setup` also takes `go-version` and `java-version`; `lang-compile` takes `tidy` (`go mod tidy` first, for generation).
 
 Used by `protogen` (`generate.yml`, `check.yml`) with `root` set to the language directory.
+
+## Service flows (reusable workflows)
+
+A service describes itself once in `.github/config/ci.yaml` and calls four thin workflows. Everything else lives here: `service-pr.yml`, `service-main.yml`, `service-staging.yml`, `service-production.yml`, built from two internal workflows (`service-build.yml`: version into the chart, build, Trivy, push image and chart; `service-deploy.yml`: resolve targets, one deployment PR per app and environment, max 3 in parallel).
+
+| Flow | Caller trigger | Version | What happens |
+|---|---|---|---|
+| `service-pr` | `pull_request` | `1.<YYYYMMDD>.<run>-pr<N>-<sha7>` | `go vet`, `go test`, build, Trivy gate, `helm lint`/`template`; nothing is pushed |
+| `service-main` | push to `main` | `1.<YYYYMMDD>.<run>-main-<sha7>` | image and chart pushed, deployment PR for environments with `workflows: [main]` |
+| `service-staging` | push to `release*` | `v<YYYY>.<MM>.N-release-<sha7>` | `create-prerelease`, image and chart pushed, deployment PR for `staging` |
+| `service-production` | `release: released` | the release tag | no build; fails when the image or chart of the tag is missing in ghcr.io; deployment PR for `production` |
+
+Contract (every key not listed here fails `retrieve-contract`):
+
+```yaml
+apps:
+  - name: courier
+    language: go
+    cicd:
+      jobs:
+        containerize-and-package:
+          image-name: courier                      # ghcr.io/<owner>/courier
+          dockerfile-path: build/courier/Dockerfile
+          chart-path: charts/courier
+          image-tag-paths: [.application.deployment.container.image.tag]
+          trivy: { severity: "HIGH,CRITICAL", ignore-unfixed: true, exit-code: 1 }   # exit-code 0 = report only
+    create-deployment-pr:                          # optional per app and environment overrides
+      environments:
+        staging: { enabled: false }
+global:
+  deploy:                                          # shared default of every environment
+    repo: huponx/mm-deploy
+    base-branch: main
+    file: "applications/{env}/{app}.yaml"          # {app} {env} {version} {actor}
+    set: [".spec.source.targetRevision"]           # yq paths that receive the version
+    reviewers: []
+    labels: []
+    automerge: false
+    slack-channel: ""
+  environments:
+    dev:        { workflows: [main], automerge: true, labels: [automerge] }
+    staging:    { workflows: [staging], enabled: false }
+    production: { workflows: [production], enabled: false }
+```
+
+`effective(env) = global.deploy * environments.<env> * app.create-deployment-pr.environments.<env>`: maps merge, a scalar or an array at the more specific level replaces the broader one.
+
+Secrets and variables of the service repository: `BOT_TOKEN` (PAT with contents and pull-requests write on the deployment repository) or a GitHub App (variable `DEPLOY_APP_ID`, secret `DEPLOY_APP_PRIVATE_KEY`, passed as `deploy-app-id`), optional `SLACK_WEBHOOK_URL`. The workflows call the actions as `huponx/actions/...@v1`, so a change here is used by services only after the next release. Trivy runs on the image before the push; the chart and Dockerfile `trivy config` scans are report only. Pushes of the same staging commit are idempotent (same tag, same PR).
 
 ## trivy-scan
 
@@ -50,6 +105,8 @@ Scans one image reference and writes `vulnerabilities.json`, a flat de-duplicate
 | `timeout` | `10m` | scan timeout |
 | `output-dir` | `$RUNNER_TEMP/trivy-scan` | where the files are written |
 | `fail-on-severity` | empty | comma separated severities that fail the step |
+| `ignorefile` | empty | `.trivyignore` file (empty = Trivy's default lookup) |
+| `sarif` | `false` | also write `trivy.sarif` (output `sarif`) |
 | `summary` | `true` | severity table in the job summary |
 
 Outputs: `vulnerabilities`, `report` (paths), `total`, `critical`, `high`, `medium`, `low`. Only vulnerabilities (no secrets or misconfiguration) are scanned. Trivy downloads its vulnerability database from `ghcr.io/aquasecurity/trivy-db`; a runner that cannot reach it fails the scan.

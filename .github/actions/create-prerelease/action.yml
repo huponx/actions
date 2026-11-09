@@ -1,0 +1,52 @@
+name: create-prerelease
+description: >-
+  Create the GitHub pre-release of a staging build, tagged v<YYYY>.<MM>.N-release-<short-sha>. N restarts
+  every month and only increases after the previous pre-release was published; until then a new push only
+  changes the short sha and replaces the unpublished pre-release. Re-running on the same commit is a no-op.
+inputs:
+  github-token:
+    description: Token with contents write.
+    required: true
+  sha:
+    description: Commit to tag.
+    required: false
+    default: ${{ github.sha }}
+outputs:
+  version:
+    description: Release version (the tag, for example v2026.08.1-release-e1f4018).
+    value: ${{ steps.release.outputs.tag }}
+  created:
+    description: true when a new pre-release was created.
+    value: ${{ steps.release.outputs.created }}
+runs:
+  using: composite
+  steps:
+    - name: Create or reuse the pre-release
+      id: release
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        SHA: ${{ inputs.sha }}
+        SCRIPTS: ${{ github.action_path }}/scripts
+        TEMP_DIR: ${{ runner.temp }}
+      run: |
+        set -euo pipefail
+        gh api "repos/${GITHUB_REPOSITORY}/releases" --paginate --jq '.[] | {tag_name, prerelease, draft}' | jq -s . > "${TEMP_DIR}/releases.json"
+        short="${SHA:0:7}"
+        out=$(bash "${SCRIPTS}/next-version.sh" "${TEMP_DIR}/releases.json" "$(date -u +%Y)" "$(date -u +%m)" "${short}")
+        echo "${out}"
+        tag=$(sed -n 's/^tag=//p' <<<"${out}")
+        exists=$(sed -n 's/^exists=//p' <<<"${out}")
+        superseded=$(sed -n 's/^superseded=//p' <<<"${out}")
+        if [ "${exists}" = "true" ]; then
+          echo "created=false" >> "${GITHUB_OUTPUT}"
+        else
+          gh release create "${tag}" --repo "${GITHUB_REPOSITORY}" --target "${SHA}" --prerelease --title "${tag}" --generate-notes
+          echo "created=true" >> "${GITHUB_OUTPUT}"
+        fi
+        echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+        # The unpublished pre-releases this one replaces (same N, older sha). Their images stay in GHCR.
+        for old in ${superseded}; do
+          echo "::notice::replacing the unpublished pre-release ${old}"
+          gh release delete "${old}" --repo "${GITHUB_REPOSITORY}" --cleanup-tag --yes
+        done

@@ -1,0 +1,101 @@
+name: helm-package-push
+description: >-
+  Build chart dependencies, helm lint and template (with ci/*.yaml values), optional helm-unittest, a
+  report-only trivy config scan, package, and push to oci://ghcr.io/<owner>/charts. An existing version is
+  never overwritten.
+inputs:
+  chart-path:
+    description: Chart directory (Chart.yaml must already carry the version, see update-chart-metadata).
+    required: true
+  version:
+    description: Chart version.
+    required: true
+  push:
+    description: Push the chart (false = lint, template and package only).
+    required: false
+    default: "false"
+  owner:
+    description: Registry owner (default is the repository owner).
+    required: false
+    default: ""
+  registry-path:
+    description: Path below ghcr.io/<owner>.
+    required: false
+    default: charts
+  github-token:
+    description: Token for ghcr.io (packages write to push, read for dependencies).
+    required: true
+  helm-version:
+    description: Helm version to install.
+    required: false
+    default: v3.16.4
+  config-scan:
+    description: Run a report-only trivy config scan of the chart.
+    required: false
+    default: "true"
+  severity:
+    description: Severities listed by the config scan.
+    required: false
+    default: HIGH,CRITICAL
+outputs:
+  ref:
+    description: Chart reference (oci://ghcr.io/<owner>/charts/<name>:<version>).
+    value: ${{ steps.package.outputs.ref }}
+  pushed:
+    description: true when the chart was pushed by this run.
+    value: ${{ steps.package.outputs.pushed }}
+runs:
+  using: composite
+  steps:
+    - name: Install Helm
+      uses: azure/setup-helm@v5
+      with:
+        version: ${{ inputs.helm-version }}
+        token: ${{ inputs.github-token }}
+
+    - name: Login to ghcr.io
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        ACTOR: ${{ github.actor }}
+      run: echo "${GH_TOKEN}" | helm registry login ghcr.io -u "${ACTOR}" --password-stdin
+
+    - name: Install Trivy
+      if: inputs.config-scan == 'true'
+      uses: aquasecurity/setup-trivy@v0.2.3
+      with:
+        version: latest
+        cache: true
+
+    - name: Misconfiguration scan (report only)
+      if: inputs.config-scan == 'true'
+      shell: bash
+      env:
+        CHART: ${{ inputs.chart-path }}
+        SEVERITY: ${{ inputs.severity }}
+      run: |
+        {
+          echo "### Trivy config: \`${CHART}\`"
+          echo '```'
+          trivy config --quiet --exit-code 0 --severity "${SEVERITY}" "${CHART}" 2>&1 | tail -n 60
+          echo '```'
+        } >> "${GITHUB_STEP_SUMMARY}"
+
+    - name: Package and push
+      id: package
+      shell: bash
+      env:
+        CHART: ${{ inputs.chart-path }}
+        VERSION: ${{ inputs.version }}
+        PUSH: ${{ inputs.push }}
+        OWNER_INPUT: ${{ inputs.owner }}
+        REGISTRY_PATH: ${{ inputs.registry-path }}
+        REPO_OWNER: ${{ github.repository_owner }}
+        TEMP_DIR: ${{ runner.temp }}
+        SCRIPTS: ${{ github.action_path }}/scripts
+      run: |
+        set -euo pipefail
+        owner="${OWNER_INPUT:-${REPO_OWNER}}"
+        owner="${owner,,}"
+        bash "${SCRIPTS}/package.sh" "${CHART}" "${VERSION}" "oci://ghcr.io/${owner}/${REGISTRY_PATH}" \
+          "${TEMP_DIR}/chart-dist" "${PUSH}" | tee -a "${GITHUB_OUTPUT}"

@@ -11,7 +11,7 @@ trap 'rm -rf "${tmp}"' EXIT
 git_() { git -c user.email=ci@example.com -c user.name=ci "$@"; }
 
 # Fixture: chart + Applications (the chart is a local path, helm ignores --version for those)
-mkdir -p "${tmp}/repo/chart/templates" "${tmp}/repo/applications"
+mkdir -p "${tmp}/repo/chart/templates" "${tmp}/repo/applications/dev"
 cd "${tmp}/repo"
 cat > chart/Chart.yaml <<'YAML'
 apiVersion: v2
@@ -36,7 +36,7 @@ spec:
     - port: {{ .Values.port }}
 YAML
 write_app() { # <name> <greeting> <revision>
-  cat > "applications/$1.yaml" <<YAML
+  cat > "applications/dev/$1.yaml" <<YAML
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -60,7 +60,7 @@ git init -q -b main && git_ add -A && git_ commit -qm base
 base="$(git rev-parse HEAD)"
 write_app demo "hello-world" 1.0.1      # changed
 write_app fresh hi 1.0.0                # added
-git rm -q applications/gone.yaml        # removed
+git rm -q applications/dev/gone.yaml        # removed
 git_ add -A && git_ commit -qm change
 
 # 1. Report
@@ -72,9 +72,9 @@ grep -q 'ConfigMap/demo-config' "${tmp}/work/comment.md" || fail "changed Config
 grep -q '| Changed |' "${tmp}/work/comment.md" || fail "no Changed row"
 grep -q '| Added |' "${tmp}/work/comment.md" || fail "no Added row"
 grep -q 'Removed (pruned by ArgoCD)' "${tmp}/work/comment.md" || fail "no Removed row"
-grep -q 'https://example.test/site/demo/1.0.0...1.0.1.html' "${tmp}/work/urls.txt" || fail "html url missing"
-[ -s "${tmp}/work/pages/diffs/demo/1.0.0...1.0.1.html" ] || fail "html page missing"
-page="${tmp}/work/pages/diffs/demo/1.0.0...1.0.1.html"
+grep -q 'https://example.test/site/dev/demo/1.0.0...1.0.1.html' "${tmp}/work/urls.txt" || fail "html url missing"
+[ -s "${tmp}/work/pages/diffs/dev/demo/1.0.0...1.0.1.html" ] || fail "html page missing"
+page="${tmp}/work/pages/diffs/dev/demo/1.0.0...1.0.1.html"
 grep -q greeting "${page}" || fail "html does not contain the change"
 grep -q world "${page}" || fail "html does not contain the change"
 grep -q '^<!-- argocd-manifest-diff -->' "${tmp}/work/comment.md" || fail "marker missing"
@@ -89,7 +89,7 @@ for i in 1 2; do
 done
 git clone -q "${tmp}/pages.git" "${tmp}/check" 2>/dev/null
 [ -f "${tmp}/check/README.md" ] || fail "publish removed an unrelated file"
-[ -f "${tmp}/check/diffs/demo/1.0.0...1.0.1.html" ] || fail "page not published"
+[ -f "${tmp}/check/diffs/dev/demo/1.0.0...1.0.1.html" ] || fail "page not published"
 [ -f "${tmp}/check/diffs/index.html" ] || fail "index not generated"
 [ "$(git -C "${tmp}/check" rev-list --count HEAD)" = "2" ] || fail "second publish created a commit"
 echo "ok publish"

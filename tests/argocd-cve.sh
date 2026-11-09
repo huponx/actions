@@ -18,22 +18,22 @@ FAKE
 chmod +x "${tmp}/images.sh"
 
 repo="${tmp}/repo"
-mkdir -p "${repo}/applications"
+mkdir -p "${repo}/applications/dev"
 cd "${repo}"
 git init -q
 git config user.email t@t; git config user.name t
-cat > applications/web.yaml <<'Y'
+cat > applications/dev/web.yaml <<'Y'
 images: ["ghcr.io/o/web:1.0", "docker.io/library/redis:7", "localhost:5000/side/car:1"]
 Y
-cat > applications/gone.yaml <<'Y'
+cat > applications/dev/gone.yaml <<'Y'
 images: ["ghcr.io/o/gone:1"]
 Y
 git add -A; git commit -qm base
 base=$(git rev-parse HEAD)
-cat > applications/web.yaml <<'Y'
+cat > applications/dev/web.yaml <<'Y'
 images: ["ghcr.io/o/web:1.1", "docker.io/library/redis:7", "ghcr.io/o/extra:2", "localhost:5000/side/car@sha256:abc"]
 Y
-git rm -q applications/gone.yaml
+git rm -q applications/dev/gone.yaml
 git commit -qam change
 
 BASE_SHA="${base}" WORK="${tmp}/w" IMAGES_CMD="${tmp}/images.sh" bash "${plan_scripts}/cve-plan.sh" >/dev/null
@@ -42,7 +42,7 @@ plan="${tmp}/w/plan.json"
 jq -e '.items[] | select(.key=="docker.io/library/redis")' "${plan}" >/dev/null && fail "unchanged image listed"
 jq -e '.items[] | select(.key=="ghcr.io/o/web" and .old=="ghcr.io/o/web:1.0" and .new=="ghcr.io/o/web:1.1")' "${plan}" >/dev/null || fail "changed pair"
 jq -e '.items[] | select(.key=="ghcr.io/o/extra" and .old==null)' "${plan}" >/dev/null || fail "added image"
-jq -e '.items[] | select(.app=="gone" and .new==null)' "${plan}" >/dev/null || fail "removed image"
+jq -e '.items[] | select(.app=="dev/gone" and .new==null)' "${plan}" >/dev/null || fail "removed image"
 jq -e '.items[] | select(.key=="localhost:5000/side/car" and .old=="localhost:5000/side/car:1")' "${plan}" >/dev/null || fail "registry with port"
 [ "$(jq '.scans | length' "${plan}")" = 5 ] || fail "scans: $(jq -c .scans "${plan}")"
 [ "$(jq -c '.include | length' "${tmp}/w/matrix.json")" = 5 ] || fail "matrix"

@@ -1,0 +1,97 @@
+name: Service staging
+
+# Staging flow (push to release*): checks, pre-release v<YYYY>.<MM>.N-release-<short-sha>, push image and
+# chart with that version, then a deployment PR per environment whose workflows list contains "staging".
+# N only increases after the previous pre-release of the month was published; until then a push changes the
+# short sha and replaces the unpublished pre-release.
+# Caller:
+#   on: { push: { branches: ["release*"] } }
+#   permissions: { contents: write, packages: write }
+#   jobs: { staging: { uses: huponx/actions/.github/workflows/service-staging.yml@v1, secrets: inherit } }
+on:
+  workflow_call:
+    inputs:
+      config-path:
+        description: Path of the CI contract in the service repository.
+        type: string
+        default: .github/config/ci.yaml
+      go-version:
+        type: string
+        default: "1.26"
+      deploy-app-id:
+        type: string
+        default: ""
+      sarif:
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      apps: ${{ steps.contract.outputs.apps }}
+    steps:
+      - uses: actions/checkout@v5
+      - id: contract
+        uses: huponx/actions/.github/actions/retrieve-contract@v1
+        with:
+          config-path: ${{ inputs.config-path }}
+
+  lint-test:
+    needs: contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+      - uses: huponx/actions/.github/actions/lang-setup@v1
+        with:
+          lang: go
+          go-version: ${{ inputs.go-version }}
+      - run: go vet ./...
+      - run: go test ./...
+      - name: golangci-lint
+        if: hashFiles('.golangci.yml', '.golangci.yaml', '.golangci.toml') != ''
+        uses: golangci/golangci-lint-action@v8
+
+  prerelease:
+    needs: [contract, lint-test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - id: release
+        uses: huponx/actions/.github/actions/create-prerelease@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+  build:
+    needs: [contract, prerelease]
+    uses: huponx/actions/.github/workflows/service-build.yml@v1
+    with:
+      apps: ${{ needs.contract.outputs.apps }}
+      version: ${{ needs.prerelease.outputs.version }}
+      push: true
+      sarif: ${{ inputs.sarif }}
+    secrets: inherit
+
+  deploy:
+    needs: [prerelease, build]
+    uses: huponx/actions/.github/workflows/service-deploy.yml@v1
+    with:
+      flow: staging
+      version: ${{ needs.prerelease.outputs.version }}
+      config-path: ${{ inputs.config-path }}
+      deploy-app-id: ${{ inputs.deploy-app-id }}
+    secrets: inherit

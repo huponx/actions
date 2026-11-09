@@ -1,0 +1,41 @@
+name: resolve-env-config
+description: >-
+  Resolve which apps and environments a flow (main, staging, production) deploys to: deep-merge the shared
+  deploy defaults with the environment block and the per-app override, substitute {app} {env} {version}
+  in the file path, and skip disabled environments.
+inputs:
+  config-path:
+    description: Path of the contract.
+    required: false
+    default: .github/config/ci.yaml
+  flow:
+    description: Flow name matched against the `workflows` list of each environment (main, staging, production).
+    required: true
+  version:
+    description: Release version substituted for {version}.
+    required: true
+outputs:
+  targets:
+    description: JSON array of resolved targets (app, env, repo, base-branch, file, set, reviewers, labels, automerge, slack-channel).
+    value: ${{ steps.resolve.outputs.targets }}
+  count:
+    description: Number of targets.
+    value: ${{ steps.resolve.outputs.count }}
+runs:
+  using: composite
+  steps:
+    - name: Resolve the targets
+      id: resolve
+      shell: bash
+      env:
+        CONFIG: ${{ inputs.config-path }}
+        FLOW: ${{ inputs.flow }}
+        VERSION: ${{ inputs.version }}
+        ACTOR: ${{ github.actor }}
+        SCRIPTS: ${{ github.action_path }}/scripts
+      run: |
+        set -euo pipefail
+        targets=$(bash "${SCRIPTS}/resolve.sh" "${CONFIG}" "${FLOW}" "${VERSION}")
+        echo "targets=${targets}" >> "${GITHUB_OUTPUT}"
+        echo "count=$(jq length <<<"${targets}")" >> "${GITHUB_OUTPUT}"
+        echo "${targets}" | jq .
