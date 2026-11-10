@@ -82,7 +82,7 @@ jq -nr \
          + "</summary>\n\n"
          + (if $hasold then "**NEW** marks the ones the old image did not have.\n\n" else "" end)
          + head + "\n"
-         + ($new | .[0:$max] | map(row(if $hasold and (k as $x | $addedkeys | index($x)) then "**NEW**" else "" end)) | join("\n"))
+         + ($new | .[0:$max] | map(row(if $hasold and (k as $x | $addedkeys | index($x)) then "**NEW**" else "-" end)) | join("\n"))
          + (if ($new | length) > $max then "\n\n_\(($new | length) - $max) more not shown (sorted by severity)._" else "" end)
          + "\n\n</details>"
        end),

@@ -64,7 +64,7 @@ PY
 }
 
 for attempt in 1 2 3 4; do
-  cp -R "${pages}/${subdir:+${subdir}/}." "${root}/"
+  cp -Rp "${pages}/${subdir:+${subdir}/}." "${root}/"
   if [ "${keep_days}" != "0" ]; then
     find "${root}" -type f -name '*.html' ! -name index.html -mtime "+${keep_days}" -delete 2>/dev/null || true
   fi
