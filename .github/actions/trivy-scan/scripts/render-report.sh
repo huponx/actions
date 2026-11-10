@@ -46,13 +46,14 @@ jq -nr \
             elif (.id | startswith("GHSA-")) then "https://github.com/advisories/" + .id
             elif ((.url // "") != "") then .url else "" end;
   def cve: if link != "" then "[\(.id)](\(link))" else .id end;
+  def ref($t): if ($t | startswith("@")) then $image + $t else $image + ":" + $t end;
   def fix: if .fixed == "" then "-" else "`\(.fixed | esc)`" end;
   def n($l; $s): $l | map(select(.severity == $s)) | length;
   def sevs: ["CRITICAL","HIGH","MEDIUM","LOW","UNKNOWN"];
   def sevhead: "| | " + (sevs | join(" | ")) + " |\n|---|" + (sevs | map("---:") | join("|")) + "|";
   def srow($label; $l): "| \($label) | " + (sevs | map(n($l; .) | tostring) | join(" | ")) + " |";
-  def row($mark): "| \(cve) | \(.severity) | `\(.pkg | esc)` | `\(.installed | esc)` | \(fix) | \($mark) |";
-  def head: "| CVE | Severity | Package | Installed | Fixed in | Status |\n|---|---|---|---|---|---|";
+  def row($mark): "| \(.severity) | \(cve) | `\(.pkg | esc)` | `\(.installed | esc)` | \(fix) | \($mark) |";
+  def head: "| Severity | CVE | Package | Installed | Fixed in | Status |\n|---|---|---|---|---|---|";
 
   ($old | map(k)) as $oldkeys
   | ($new | map(k)) as $newkeys
@@ -62,8 +63,7 @@ jq -nr \
   | [
       "### `\($app)`",
       "",
-      "- **Image:** `\($image)`",
-      (if $hasold then "- **Tag:** `\($oldtag)` -> `\($newtag)`" else "- **Tag:** `\($newtag)`" end),
+      (if $hasold then "- **Image:** `\(ref($oldtag))` -> `\(ref($newtag))`" else "- **Image:** `\(ref($newtag))`" end),
       "",
       (if ($new | length) == 0 and ($removed | length) == 0 then "No vulnerability found in the new image."
        elif $hasold then

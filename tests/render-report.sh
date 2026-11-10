@@ -19,8 +19,7 @@ out="${tmp}/out.md"
 # Without an old list: current vulnerabilities only.
 bash "${render}" --new "${tmp}/new.json" --app courier --image ghcr.io/o/courier --new-tag 1.1 > "${out}"
 grep -qxF '### `courier`' "${out}" || fail "heading"
-grep -qxF -- '- **Image:** `ghcr.io/o/courier`' "${out}" || fail "image bullet"
-grep -qxF -- '- **Tag:** `1.1`' "${out}" || fail "tag bullet without old"
+grep -qxF -- '- **Image:** `ghcr.io/o/courier:1.1`' "${out}" || fail "image bullet without old"
 grep -qxF '| | CRITICAL | HIGH | MEDIUM | LOW | UNKNOWN |' "${out}" || fail "count table"
 grep -qxF '| Count | 0 | 1 | 1 | 1 | 1 |' "${out}" || fail "unknown is counted"
 grep -qF '<details><summary>Current vulnerabilities of the new image (4)</summary>' "${out}" || fail "details summary"
@@ -33,7 +32,7 @@ echo "ok render single"
 
 # With an old list: columns, NEW mark, removed section.
 bash "${render}" --old "${tmp}/old.json" --new "${tmp}/new.json" --app dev/web --image ghcr.io/o/web --old-tag 1.0 --new-tag 1.1 > "${out}"
-grep -qxF -- '- **Tag:** `1.0` -> `1.1`' "${out}" || fail "tag bullet with old"
+grep -qxF -- '- **Image:** `ghcr.io/o/web:1.0` -> `ghcr.io/o/web:1.1`' "${out}" || fail "image bullet with old"
 grep -qxF '| | CRITICAL | HIGH | MEDIUM | LOW | UNKNOWN |' "${out}" || fail "comparison table"
 grep -qxF '| Removed | 1 | 0 | 0 | 0 | 0 |' "${out}" || fail "removed critical counted"
 grep -qF '(4), 2 new</summary>' "${out}" || fail "new counted in summary"
