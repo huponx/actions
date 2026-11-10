@@ -65,10 +65,10 @@ for f in "${files[@]}"; do
   {
     echo "### \`${app}\`"
     echo
-    if [ ! -s "${dir}/old.yaml" ]; then echo "New application at \`${new_rev}\`."
-    elif [ ! -s "${dir}/new.yaml" ]; then echo "Application removed (was \`${old_rev}\`): ArgoCD prunes everything below."
-    elif [ "${old_rev}" = "${new_rev}" ]; then echo "\`targetRevision\` unchanged (\`${new_rev}\`), only values or other fields changed."
-    else echo "\`targetRevision\`: \`${old_rev}\` -> \`${new_rev}\`"; fi
+    if [ ! -s "${dir}/old.yaml" ]; then echo "- **targetRevision:** \`${new_rev}\` (new application)"
+    elif [ ! -s "${dir}/new.yaml" ]; then echo "- **targetRevision:** \`${old_rev}\` (application removed: ArgoCD prunes everything below)"
+    elif [ "${old_rev}" = "${new_rev}" ]; then echo "- **targetRevision:** \`${new_rev}\` (unchanged, only values or other fields changed)"
+    else echo "- **targetRevision:** \`${old_rev}\` -> \`${new_rev}\`"; fi
     echo
   } >> "${work}/comment.md"
 
