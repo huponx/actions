@@ -49,6 +49,8 @@ jq -nr \
   def fix: if .fixed == "" then "-" else "`\(.fixed | esc)`" end;
   def n($l; $s): $l | map(select(.severity == $s)) | length;
   def sevs: ["CRITICAL","HIGH","MEDIUM","LOW","UNKNOWN"];
+  def sevhead: "| | " + (sevs | join(" | ")) + " |\n|---|" + (sevs | map("---:") | join("|")) + "|";
+  def srow($label; $l): "| \($label) | " + (sevs | map(n($l; .) | tostring) | join(" | ")) + " |";
   def row($mark): "| \(cve) | \(.severity) | `\(.pkg | esc)` | `\(.installed | esc)` | \(fix) | \($mark) |";
   def head: "| CVE | Severity | Package | Installed | Fixed in | Status |\n|---|---|---|---|---|---|";
 
@@ -65,14 +67,14 @@ jq -nr \
       "",
       (if ($new | length) == 0 and ($removed | length) == 0 then "No vulnerability found in the new image."
        elif $hasold then
-         "| Severity | Before | After | New | Removed |",
-         "|---|---:|---:|---:|---:|",
-         (sevs[] as $s | select(n($old; $s) + n($new; $s) > 0) |
-            "| \($s) | \(n($old; $s)) | \(n($new; $s)) | \(n($added; $s)) | \(n($removed; $s)) |")
+         sevhead,
+         srow("Before"; $old),
+         srow("After"; $new),
+         srow("New"; $added),
+         srow("Removed"; $removed)
        else
-         "| Severity | Count |",
-         "|---|---:|",
-         (sevs[] as $s | select(n($new; $s) > 0) | "| \($s) | \(n($new; $s)) |")
+         sevhead,
+         srow("Count"; $new)
        end),
       "",
       (if ($new | length) == 0 then empty
