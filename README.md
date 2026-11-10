@@ -98,11 +98,13 @@ Scans one image reference and writes `vulnerabilities.json`, a flat de-duplicate
 
 | Input | Default | Meaning |
 |---|---|---|
-| `image` (required) | | image reference |
+| `scan-type` | `image` | `image` (CVEs of an image) or `config` (report-only misconfiguration scan of `target`, used for charts and Dockerfiles) |
+| `image` | | image reference (required for `scan-type: image`) |
+| `target` | | folder to scan (required for `scan-type: config`) |
 | `severity` | `UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL` | severities to report |
 | `ignore-unfixed` | `false` | hide vulnerabilities without a fix |
 | `registry-username`, `registry-password` | empty | credentials for a private registry |
-| `trivy-version` | `latest` | Trivy to install (DB cached by `setup-trivy`) |
+| `trivy-version` | `v0.76.2` | Trivy to install (pinned, DB cached by `setup-trivy`); this is the only action that installs Trivy, `helm-package-push` and `docker-build-scan-push` call it |
 | `timeout` | `10m` | scan timeout |
 | `output-dir` | `$RUNNER_TEMP/trivy-scan` | where the files are written |
 | `fail-on-severity` | empty | comma separated severities that fail the step |
@@ -110,7 +112,7 @@ Scans one image reference and writes `vulnerabilities.json`, a flat de-duplicate
 | `sarif` | `false` | also write `trivy.sarif` (output `sarif`) |
 | `summary` | `true` | severity table in the job summary |
 
-Outputs: `vulnerabilities`, `report` (paths), `total`, `critical`, `high`, `medium`, `low`. Only vulnerabilities (no secrets or misconfiguration) are scanned.
+Outputs: `vulnerabilities`, `report` (paths), `total`, `critical`, `high`, `medium`, `low`. With `scan-type: image` only vulnerabilities (no secrets or misconfiguration) are scanned and the outputs are set; `scan-type: config` only writes a block to the job summary.
 
 **One renderer for every CVE comment.** [`scripts/render-report.sh`](.github/actions/trivy-scan/scripts/render-report.sh) turns the normalised lists into the markdown block of one image: heading, image and tag bullets, severity table (one column per severity, Unknown included; rows Count, or Before/After/New/Removed when an old list is given), collapsed current vulnerabilities, a Status column with **NEW** marks and a collapsed removed section. `docker-build-scan-push` (PR comment of a service, new list only) and `argocd-cve-report` (old vs new image in the deployment repository) both call it, so the layout is defined in this one file. Tested by [`tests/render-report.sh`](tests/render-report.sh). Trivy downloads its vulnerability database from `ghcr.io/aquasecurity/trivy-db`; a runner that cannot reach it fails the scan.
 

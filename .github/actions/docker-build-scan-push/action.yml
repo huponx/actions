@@ -51,6 +51,10 @@ inputs:
     description: Post or update a sticky pull request comment that lists the CVEs of the image (needs pull-requests write; skipped on forks and outside pull requests).
     required: false
     default: "false"
+  trivy-version:
+    description: Trivy version (default is the one pinned in trivy-scan).
+    required: false
+    default: v0.76.2
   build-args:
     description: Extra build arguments, one KEY=VALUE per line (VERSION and REVISION are always set).
     required: false
@@ -103,6 +107,7 @@ runs:
       uses: huponx/actions/.github/actions/trivy-scan@v1
       with:
         image: ${{ steps.ref.outputs.image }}
+        trivy-version: ${{ inputs.trivy-version }}
         severity: ${{ inputs.severity }}
         ignore-unfixed: ${{ inputs.ignore-unfixed }}
         fail-on-severity: ${{ inputs.fail-on-vulnerabilities == 'true' && inputs.severity || '' }}
@@ -148,23 +153,24 @@ runs:
         sarif_file: ${{ steps.scan.outputs.sarif }}
         category: trivy-${{ inputs.image-name }}
 
-    - name: Dockerfile misconfiguration scan (report only)
+    - name: Dockerfile folder
+      id: dockerfile-dir
       if: always()
-      continue-on-error: true
       shell: bash
       env:
         DOCKERFILE: ${{ inputs.dockerfile }}
-        SEVERITY: ${{ inputs.severity }}
-        IGNOREFILE: ${{ inputs.trivyignore }}
-      run: |
-        args=(--quiet --exit-code 0 --severity "${SEVERITY}")
-        [ -z "${IGNOREFILE}" ] || args+=(--ignorefile "${IGNOREFILE}")
-        {
-          echo "### Trivy config: \`${DOCKERFILE}\`"
-          echo '```'
-          trivy config "${args[@]}" "$(dirname "${DOCKERFILE}")" 2>&1 | tail -n 40
-          echo '```'
-        } >> "${GITHUB_STEP_SUMMARY}"
+      run: echo "dir=$(dirname "${DOCKERFILE}")" >> "${GITHUB_OUTPUT}"
+
+    - name: Dockerfile misconfiguration scan (report only)
+      if: always()
+      continue-on-error: true
+      uses: huponx/actions/.github/actions/trivy-scan@v1
+      with:
+        scan-type: config
+        target: ${{ steps.dockerfile-dir.outputs.dir }}
+        severity: ${{ inputs.severity }}
+        ignorefile: ${{ inputs.trivyignore }}
+        trivy-version: ${{ inputs.trivy-version }}
 
     - name: Login to ghcr.io
       if: inputs.push == 'true'
