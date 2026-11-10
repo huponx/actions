@@ -92,7 +92,22 @@ outputs:
 runs:
   using: composite
   steps:
+    # A job can call this action several times (image scan, Dockerfile scan): install Trivy only once.
+    - name: Check for an installed Trivy
+      id: have
+      shell: bash
+      env:
+        WANTED: ${{ inputs.trivy-version }}
+      run: |
+        have=false
+        if [ "${WANTED}" != "latest" ] && command -v trivy >/dev/null 2>&1; then
+          installed=$(trivy --version 2>/dev/null | sed -n 's/^Version: *//p' | head -n 1)
+          [ "${installed#v}" != "${WANTED#v}" ] || have=true
+        fi
+        echo "have=${have}" >> "${GITHUB_OUTPUT}"
+
     - name: Install Trivy
+      if: steps.have.outputs.have != 'true'
       uses: aquasecurity/setup-trivy@v0.2.6
       with:
         version: ${{ inputs.trivy-version }}
