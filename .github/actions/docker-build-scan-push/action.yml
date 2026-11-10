@@ -80,7 +80,7 @@ runs:
         owner="${OWNER_INPUT:-${REPO_OWNER}}"
         echo "image=ghcr.io/${owner,,}/${IMAGE_NAME}:${VERSION}" >> "${GITHUB_OUTPUT}"
 
-    - uses: docker/setup-buildx-action@v3
+    - uses: docker/setup-buildx-action@v4
 
     - name: Build (amd64, loaded into the local daemon)
       uses: docker/build-push-action@v7
