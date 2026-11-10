@@ -49,8 +49,8 @@ jq -nr \
   def fix: if .fixed == "" then "-" else "`\(.fixed | esc)`" end;
   def n($l; $s): $l | map(select(.severity == $s)) | length;
   def sevs: ["CRITICAL","HIGH","MEDIUM","LOW","UNKNOWN"];
-  def row($mark): "| \($mark) | \(cve) | \(.severity) | `\(.pkg | esc)` | `\(.installed | esc)` | \(fix) |";
-  def head: "| | CVE | Severity | Package | Installed | Fixed in |\n|---|---|---|---|---|---|";
+  def row($mark): "| \(cve) | \(.severity) | `\(.pkg | esc)` | `\(.installed | esc)` | \(fix) | \($mark) |";
+  def head: "| CVE | Severity | Package | Installed | Fixed in | Status |\n|---|---|---|---|---|---|";
 
   ($old | map(k)) as $oldkeys
   | ($new | map(k)) as $newkeys
