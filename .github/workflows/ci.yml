@@ -113,3 +113,4 @@ jobs:
           bash tests/service-build.sh
           bash tests/service-release.sh
           bash tests/pr-comment.sh
+          bash tests/render-report.sh
