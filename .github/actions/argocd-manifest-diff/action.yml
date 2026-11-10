@@ -40,10 +40,6 @@ inputs:
     description: Lines of the manifest diff shown inline in the comment.
     required: false
     default: "300"
-  keep-days:
-    description: Delete published pages older than this many days (0 keeps everything).
-    required: false
-    default: "90"
   comment:
     description: Post or update the PR comment.
     required: false
@@ -131,7 +127,6 @@ runs:
         DIFFS_BRANCH: ${{ inputs.diffs-branch }}
         DIFFS_PATH: ${{ inputs.diffs-path }}
         DIFFS_TOKEN: ${{ inputs.diffs-token }}
-        KEEP_DAYS: ${{ inputs.keep-days }}
         WORK: ${{ steps.report.outputs.work }}
         SCRIPTS: ${{ github.action_path }}/scripts
         PR_NUMBER: ${{ github.event.pull_request.number }}

@@ -170,7 +170,6 @@ jobs:
 | `base-sha` | PR base | commit to compare against |
 | `helm-version` | `v3.16.4` | |
 | `preview-lines` | `300` | lines of the manifest diff shown in the comment |
-| `keep-days` | `90` | pages older than this are deleted on the next publish (0 = keep) |
 | `comment` | `true` | post or update the comment |
 | `fail-on-publish-error` | `true` | fail when the pages cannot be published (keep `true` for a required check) |
 

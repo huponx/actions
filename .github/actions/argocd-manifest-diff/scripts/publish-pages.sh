@@ -9,7 +9,6 @@
 #   DIFFS_PATH     folder inside the repo (default empty = repo root); only this folder is touched
 #   DIFFS_TOKEN    token with Contents read/write on DIFFS_REPO (BOT_TOKEN in CI)
 #   DIFFS_GIT_URL  override the clone URL (tests)
-#   KEEP_DAYS      delete pages older than this many days (default 90, 0 = keep all)
 set -euo pipefail
 
 pages="${1:?usage: $0 <pages_dir> <commit message>}"
@@ -17,7 +16,6 @@ msg="${2:?usage: $0 <pages_dir> <commit message>}"
 pages=$(cd "${pages}" && pwd)   # absolute: the script changes directory
 branch="${DIFFS_BRANCH:-main}"
 subdir="${DIFFS_PATH:-}"
-keep_days="${KEEP_DAYS:-90}"
 
 url="${DIFFS_GIT_URL:-}"
 if [ -z "${url}" ]; then
@@ -65,9 +63,6 @@ PY
 
 for attempt in 1 2 3 4; do
   cp -Rp "${pages}/${subdir:+${subdir}/}." "${root}/"
-  if [ "${keep_days}" != "0" ]; then
-    find "${root}" -type f -name '*.html' ! -name index.html -mtime "+${keep_days}" -delete 2>/dev/null || true
-  fi
   regenerate_index
   git add -A "${root}"
   if git diff --cached --quiet; then echo "pages repository already up to date"; exit 0; fi
