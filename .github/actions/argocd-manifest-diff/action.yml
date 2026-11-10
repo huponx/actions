@@ -87,7 +87,6 @@ runs:
       uses: azure/setup-helm@v5
       with:
         version: ${{ inputs.helm-version }}
-        token: ${{ inputs.github-token }}
 
     - name: Login to the chart registry
       if: steps.guard.outputs.skip != 'true'

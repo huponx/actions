@@ -51,7 +51,6 @@ runs:
       uses: azure/setup-helm@v5
       with:
         version: ${{ inputs.helm-version }}
-        token: ${{ inputs.github-token }}
 
     - name: Login to ghcr.io
       shell: bash
