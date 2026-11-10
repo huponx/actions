@@ -73,6 +73,12 @@ grep -q 'Image removed from the application' "${c}" || fail "removed image note"
 # gate: CVE-4 (HIGH) in web, CVE-9 (CRITICAL) in the car image; GHSA is MEDIUM
 [ "$(cat "${tmp}/o/gate")" = 2 ] || fail "gate=$(cat "${tmp}/o/gate")"
 grep -q 'this check fails' "${c}" || fail "gate message"
+# shellcheck disable=SC2016  # backticks are literal markdown
+grep -qF -- '- **Image:** `ghcr.io/o/web`' "${c}" || fail "image line"
+# shellcheck disable=SC2016
+grep -qF -- '- **Tag:** `1.0` -> `1.1`' "${c}" || fail "tag line"
+# shellcheck disable=SC2016
+grep -qF -- '- **Tag:** `1` -> `removed`' "${c}" || fail "removed tag line"
 echo "ok report"
 
 # No gate configured, nothing changed.

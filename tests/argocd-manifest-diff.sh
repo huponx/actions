@@ -69,6 +69,8 @@ BASE_SHA="${base}" WORK="${tmp}/work" DIFFS_PATH=diffs DIFFS_BASE_URL=https://ex
 fail() { echo "FAIL: $*"; cat "${tmp}/work/comment.md"; exit 1; }
 [ "$(cat "${tmp}/work/changed")" = "3" ] || fail "expected 3 changed applications"
 grep -q 'ConfigMap/demo-config' "${tmp}/work/comment.md" || fail "changed ConfigMap missing"
+# shellcheck disable=SC2016  # backticks are literal markdown
+grep -qF -- '- **targetRevision:** `1.0.0` -> `1.0.1`' "${tmp}/work/comment.md" || fail "targetRevision line"
 grep -q '| Changed |' "${tmp}/work/comment.md" || fail "no Changed row"
 grep -q '| Added |' "${tmp}/work/comment.md" || fail "no Added row"
 grep -q 'Removed (pruned by ArgoCD)' "${tmp}/work/comment.md" || fail "no Removed row"
