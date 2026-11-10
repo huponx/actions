@@ -32,7 +32,7 @@ automerge="${AUTOMERGE:-false}"
 token="${TOKEN:?TOKEN is required}"
 url="${GIT_URL:-https://x-access-token:${token}@github.com/${repo}.git}"
 branch="deploy/${app}/${env_name}/${version}"
-title="chore(${app}): bump chart to ${version} (${env_name})"
+title="chore(${app}): [${env_name}] bump chart to ${version}"
 
 export GH_TOKEN="${token}"
 tmp=$(mktemp -d)
