@@ -68,6 +68,8 @@ J
 bash "$(dirname "$0")/../.github/actions/docker-build-scan-push/scripts/cve-comment.sh" "${d}/v.json" courier ghcr.io/o/courier:1 "${d}/o.md"
 head -n 1 "${d}/o.md" | grep -q '^<!-- trivy-image:courier -->$' || { echo "FAIL: marker"; exit 1; }
 grep -q '| HIGH | \[CVE-1\](https://x/CVE-1) | stdlib | 1.26.7 | 1.26.8 |' "${d}/o.md" || { echo "FAIL: row"; exit 1; }
+grep -q '<details><summary>Vulnerabilities (2)</summary>' "${d}/o.md" || { echo "FAIL: details"; exit 1; }
+grep -q '^</details>$' "${d}/o.md" || { echo "FAIL: details close"; exit 1; }
 grep -q 'a\\|b' "${d}/o.md" || { echo "FAIL: pipe escape"; exit 1; }
 echo '[]' > "${d}/e.json"
 bash "$(dirname "$0")/../.github/actions/docker-build-scan-push/scripts/cve-comment.sh" "${d}/e.json" c r "${d}/e.md"
