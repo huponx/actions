@@ -74,11 +74,9 @@ grep -q 'Image removed from the application' "${c}" || fail "removed image note"
 [ "$(cat "${tmp}/o/gate")" = 2 ] || fail "gate=$(cat "${tmp}/o/gate")"
 grep -q 'this check fails' "${c}" || fail "gate message"
 # shellcheck disable=SC2016  # backticks are literal markdown
-grep -qF -- '- **Image:** `ghcr.io/o/web`' "${c}" || fail "image line"
+grep -qF -- '- **Image:** `ghcr.io/o/web:1.0` -> `ghcr.io/o/web:1.1`' "${c}" || fail "image line"
 # shellcheck disable=SC2016
-grep -qF -- '- **Tag:** `1.0` -> `1.1`' "${c}" || fail "tag line"
-# shellcheck disable=SC2016
-grep -qF -- '- **Tag:** `1` -> `removed`' "${c}" || fail "removed tag line"
+grep -qE -- '- \*\*Image:\*\* `[^`]+:1` -> `removed`' "${c}" || fail "removed image line"
 [ "$(grep -c '<details>' "${c}")" = "$(grep -c '^</details>$' "${c}")" ] || fail "unbalanced details"
 grep -q '<details><summary>Current vulnerabilities of the new image (3), 1 new</summary>' "${c}" || fail "current vulnerabilities not collapsible"
 echo "ok report"
