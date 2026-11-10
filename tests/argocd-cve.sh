@@ -79,6 +79,8 @@ grep -qF -- '- **Image:** `ghcr.io/o/web`' "${c}" || fail "image line"
 grep -qF -- '- **Tag:** `1.0` -> `1.1`' "${c}" || fail "tag line"
 # shellcheck disable=SC2016
 grep -qF -- '- **Tag:** `1` -> `removed`' "${c}" || fail "removed tag line"
+[ "$(grep -c '<details>' "${c}")" = "$(grep -c '^</details>$' "${c}")" ] || fail "unbalanced details"
+grep -q '<details><summary>Current vulnerabilities of the new image (3), 1 new</summary>' "${c}" || fail "current vulnerabilities not collapsible"
 echo "ok report"
 
 # No gate configured, nothing changed.

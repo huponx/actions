@@ -110,7 +110,9 @@ Scans one image reference and writes `vulnerabilities.json`, a flat de-duplicate
 | `sarif` | `false` | also write `trivy.sarif` (output `sarif`) |
 | `summary` | `true` | severity table in the job summary |
 
-Outputs: `vulnerabilities`, `report` (paths), `total`, `critical`, `high`, `medium`, `low`. Only vulnerabilities (no secrets or misconfiguration) are scanned. Trivy downloads its vulnerability database from `ghcr.io/aquasecurity/trivy-db`; a runner that cannot reach it fails the scan.
+Outputs: `vulnerabilities`, `report` (paths), `total`, `critical`, `high`, `medium`, `low`. Only vulnerabilities (no secrets or misconfiguration) are scanned.
+
+**One renderer for every CVE comment.** [`scripts/render-report.sh`](.github/actions/trivy-scan/scripts/render-report.sh) turns the normalised lists into the markdown block of one image: heading, image and tag bullets, severity table (with Unknown), collapsed current vulnerabilities and, when an old list is given, Before/After/New/Removed columns, **NEW** marks and a collapsed removed section. `docker-build-scan-push` (PR comment of a service, new list only) and `argocd-cve-report` (old vs new image in the deployment repository) both call it, so the layout is defined in this one file. Tested by [`tests/render-report.sh`](tests/render-report.sh). Trivy downloads its vulnerability database from `ghcr.io/aquasecurity/trivy-db`; a runner that cannot reach it fails the scan.
 
 ## argocd-repo-validate, argocd-cve-plan, argocd-cve-report
 
@@ -118,7 +120,7 @@ Used by the GitOps repository `mm-deploy`, which keeps only ArgoCD manifests and
 
 - `argocd-repo-validate` (inputs `applications-path`, `paths`, tool versions): run after checkout. Policy: kind and apiVersion, `metadata.name` equals the file name, the ArgoCD finalizer, pinned `targetRevision`, no inline secret values, automated sync.
 - `argocd-cve-plan` (input `github-token`): run with `fetch-depth: 0`. Outputs `matrix` (feed `strategy.matrix` of a job that calls `trivy-scan` and uploads `vulnerabilities.json` as artifact `cve-<id>`) and `images`; uploads `plan.json`. Images are paired by repository; unchanged ones are skipped.
-- `argocd-cve-report` (inputs `github-token`, `images`, `fail-on-new`, `max-rows`): downloads the plan and the scans, comments (marker `<!-- cve-diff -->`: severity table, current CVEs with **NEW** marks, removed CVEs) and fails when `fail-on-new` severities were introduced. A CVE is identified by id and package. Tested by [`tests/argocd-cve.sh`](tests/argocd-cve.sh).
+- `argocd-cve-report` (inputs `github-token`, `images`, `fail-on-new`, `max-rows`): downloads the plan and the scans, comments (marker `<!-- cve-diff -->`; each image is rendered by the shared `trivy-scan/scripts/render-report.sh`: severity table, current CVEs with **NEW** marks, removed CVEs) and fails when `fail-on-new` severities were introduced. A CVE is identified by id and package. Tested by [`tests/argocd-cve.sh`](tests/argocd-cve.sh).
 
 See `mm-deploy/.github/workflows/cve.yml` for the three jobs wired together.
 

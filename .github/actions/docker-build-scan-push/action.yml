@@ -117,12 +117,19 @@ runs:
       env:
         VULNS: ${{ steps.scan.outputs.vulnerabilities }}
         IMAGE_NAME: ${{ inputs.image-name }}
+        VERSION: ${{ inputs.version }}
         IMAGE: ${{ steps.ref.outputs.image }}
         BODY: ${{ runner.temp }}/cve-comment-${{ inputs.image-name }}.md
-        SCRIPTS: ${{ github.action_path }}/scripts
+        # The renderer is shared with argocd-cve-report: it lives in the trivy-scan action.
+        RENDER: ${{ github.action_path }}/../trivy-scan/scripts/render-report.sh
       run: |
         set -euo pipefail
-        bash "${SCRIPTS}/cve-comment.sh" "${VULNS}" "${IMAGE_NAME}" "${IMAGE}" "${BODY}"
+        {
+          echo "<!-- trivy-image:${IMAGE_NAME} -->"
+          echo "## Image vulnerabilities (Trivy)"
+          echo
+          bash "${RENDER}" --new "${VULNS}" --app "${IMAGE_NAME}" --image "${IMAGE%:*}" --new-tag "${VERSION}" --max-rows 50
+        } > "${BODY}"
         echo "body=${BODY}" >> "${GITHUB_OUTPUT}"
 
     - name: Comment the CVEs on the pull request
@@ -148,11 +155,14 @@ runs:
       env:
         DOCKERFILE: ${{ inputs.dockerfile }}
         SEVERITY: ${{ inputs.severity }}
+        IGNOREFILE: ${{ inputs.trivyignore }}
       run: |
+        args=(--quiet --exit-code 0 --severity "${SEVERITY}")
+        [ -z "${IGNOREFILE}" ] || args+=(--ignorefile "${IGNOREFILE}")
         {
           echo "### Trivy config: \`${DOCKERFILE}\`"
           echo '```'
-          trivy config --quiet --exit-code 0 --severity "${SEVERITY}" "$(dirname "${DOCKERFILE}")" 2>&1 | tail -n 40
+          trivy config "${args[@]}" "$(dirname "${DOCKERFILE}")" 2>&1 | tail -n 40
           echo '```'
         } >> "${GITHUB_STEP_SUMMARY}"
 

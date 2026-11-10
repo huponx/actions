@@ -59,19 +59,3 @@ grep -qx "ref=oci://example.invalid/charts/demo:${ver}" <<<"${out}" || fail "ref
 [ -f "${tmp}/dist/demo-${ver}.tgz" ] || fail "tgz missing"
 if bash "${a}/helm-package-push/scripts/package.sh" "${tmp}/charts/demo" "v9.9.9" oci://example.invalid/charts "${tmp}/dist" false >/dev/null 2>&1; then fail "version mismatch accepted"; fi
 echo "ok package"
-
-# CVE comment markdown
-d=$(mktemp -d)
-cat > "${d}/v.json" <<'J'
-[{"id":"CVE-1","pkg":"stdlib","installed":"1.26.7","fixed":"1.26.8","severity":"HIGH","title":"t","url":"https://x/CVE-1"},{"id":"CVE-2","pkg":"a|b","installed":"1","fixed":"","severity":"LOW","title":"","url":""}]
-J
-bash "$(dirname "$0")/../.github/actions/docker-build-scan-push/scripts/cve-comment.sh" "${d}/v.json" courier ghcr.io/o/courier:1 "${d}/o.md"
-head -n 1 "${d}/o.md" | grep -q '^<!-- trivy-image:courier -->$' || { echo "FAIL: marker"; exit 1; }
-grep -q '| HIGH | \[CVE-1\](https://x/CVE-1) | stdlib | 1.26.7 | 1.26.8 |' "${d}/o.md" || { echo "FAIL: row"; exit 1; }
-grep -q '<details><summary>Vulnerabilities (2)</summary>' "${d}/o.md" || { echo "FAIL: details"; exit 1; }
-grep -q '^</details>$' "${d}/o.md" || { echo "FAIL: details close"; exit 1; }
-grep -q 'a\\|b' "${d}/o.md" || { echo "FAIL: pipe escape"; exit 1; }
-echo '[]' > "${d}/e.json"
-bash "$(dirname "$0")/../.github/actions/docker-build-scan-push/scripts/cve-comment.sh" "${d}/e.json" c r "${d}/e.md"
-grep -q 'No vulnerability found' "${d}/e.md" || { echo "FAIL: empty"; exit 1; }
-echo "ok cve-comment"
