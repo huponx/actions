@@ -37,6 +37,10 @@ inputs:
     description: Severities listed by the config scan.
     required: false
     default: HIGH,CRITICAL
+  trivy-version:
+    description: Trivy version used by the config scan (default is the one pinned in trivy-scan).
+    required: false
+    default: v0.76.2
 outputs:
   ref:
     description: Chart reference (oci://ghcr.io/<owner>/charts/<name>:<version>).
@@ -59,26 +63,14 @@ runs:
         ACTOR: ${{ github.actor }}
       run: echo "${GH_TOKEN}" | helm registry login ghcr.io -u "${ACTOR}" --password-stdin
 
-    - name: Install Trivy
-      if: inputs.config-scan == 'true'
-      uses: aquasecurity/setup-trivy@v0.2.6
-      with:
-        version: latest
-        cache: true
-
     - name: Misconfiguration scan (report only)
       if: inputs.config-scan == 'true'
-      shell: bash
-      env:
-        CHART: ${{ inputs.chart-path }}
-        SEVERITY: ${{ inputs.severity }}
-      run: |
-        {
-          echo "### Trivy config: \`${CHART}\`"
-          echo '```'
-          trivy config --quiet --exit-code 0 --severity "${SEVERITY}" "${CHART}" 2>&1 | tail -n 60
-          echo '```'
-        } >> "${GITHUB_STEP_SUMMARY}"
+      uses: huponx/actions/.github/actions/trivy-scan@v1
+      with:
+        scan-type: config
+        target: ${{ inputs.chart-path }}
+        severity: ${{ inputs.severity }}
+        trivy-version: ${{ inputs.trivy-version }}
 
     - name: Package and push
       id: package

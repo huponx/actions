@@ -1,12 +1,22 @@
 name: trivy-scan
 description: >-
-  Scan a container image for known vulnerabilities (CVE) with Trivy and write a normalised, de-duplicated
-  JSON list (id, package, installed and fixed version, severity). Reusable on its own or as the input of
-  a comparison between two images.
+  Install Trivy (one pinned version for every action) and scan with it. scan-type image: scan a container
+  image for known vulnerabilities (CVE) and write a normalised, de-duplicated JSON list (id, package,
+  installed and fixed version, severity); reusable on its own or as the input of a comparison between two
+  images. scan-type config: report-only misconfiguration scan of a folder (chart, Dockerfile).
 inputs:
+  scan-type:
+    description: image (vulnerabilities of a container image) or config (report-only misconfiguration scan of target).
+    required: false
+    default: image
   image:
-    description: Image reference to scan, for example ghcr.io/owner/app:1.2.3.
-    required: true
+    description: Image reference to scan (scan-type image), for example ghcr.io/owner/app:1.2.3.
+    required: false
+    default: ""
+  target:
+    description: Folder to scan (scan-type config), for example a chart or the folder of a Dockerfile.
+    required: false
+    default: ""
   severity:
     description: Comma separated severities to report.
     required: false
@@ -24,9 +34,9 @@ inputs:
     required: false
     default: ""
   trivy-version:
-    description: Trivy version to install (latest or a tag such as v0.58.1).
+    description: Trivy version to install, a release tag (pinned on purpose, bump it here for every action at once).
     required: false
-    default: latest
+    default: v0.76.2
   timeout:
     description: Scan timeout.
     required: false
@@ -76,6 +86,9 @@ outputs:
   low:
     description: Number of LOW vulnerabilities.
     value: ${{ steps.scan.outputs.low }}
+  unknown:
+    description: Number of UNKNOWN vulnerabilities.
+    value: ${{ steps.scan.outputs.unknown }}
 runs:
   using: composite
   steps:
@@ -85,7 +98,38 @@ runs:
         version: ${{ inputs.trivy-version }}
         cache: true
 
+    - name: Check inputs
+      shell: bash
+      env:
+        SCAN_TYPE: ${{ inputs.scan-type }}
+        IMAGE: ${{ inputs.image }}
+        TARGET: ${{ inputs.target }}
+      run: |
+        case "${SCAN_TYPE}" in
+          image) [ -n "${IMAGE}" ] || { echo "::error::input image is required for scan-type image"; exit 1; } ;;
+          config) [ -n "${TARGET}" ] || { echo "::error::input target is required for scan-type config"; exit 1; } ;;
+          *) echo "::error::scan-type must be image or config, got '${SCAN_TYPE}'"; exit 1 ;;
+        esac
+
+    - name: Misconfiguration scan (report only)
+      if: inputs.scan-type == 'config'
+      shell: bash
+      env:
+        TARGET: ${{ inputs.target }}
+        SEVERITY: ${{ inputs.severity }}
+        IGNOREFILE: ${{ inputs.ignorefile }}
+      run: |
+        args=(--quiet --exit-code 0 --severity "${SEVERITY}")
+        [ -z "${IGNOREFILE}" ] || args+=(--ignorefile "${IGNOREFILE}")
+        {
+          echo "### Trivy config: \`${TARGET}\`"
+          echo '```'
+          trivy config "${args[@]}" "${TARGET}" 2>&1 | tail -n 60
+          echo '```'
+        } >> "${GITHUB_STEP_SUMMARY}"
+
     - name: Scan the image
+      if: inputs.scan-type == 'image'
       id: scan
       shell: bash
       env:
@@ -124,7 +168,7 @@ runs:
         echo "${counts}"
 
     - name: Job summary
-      if: inputs.summary == 'true'
+      if: inputs.scan-type == 'image' && inputs.summary == 'true'
       shell: bash
       env:
         IMAGE: ${{ inputs.image }}
@@ -133,18 +177,19 @@ runs:
         HIGH: ${{ steps.scan.outputs.high }}
         MEDIUM: ${{ steps.scan.outputs.medium }}
         LOW: ${{ steps.scan.outputs.low }}
+        UNKNOWN: ${{ steps.scan.outputs.unknown }}
       run: |
         {
           echo "### Trivy: \`${IMAGE}\`"
           echo
-          echo "| Critical | High | Medium | Low | Total |"
-          echo "|---:|---:|---:|---:|---:|"
-          echo "| ${CRITICAL} | ${HIGH} | ${MEDIUM} | ${LOW} | ${TOTAL} |"
+          echo "| Critical | High | Medium | Low | Unknown | Total |"
+          echo "|---:|---:|---:|---:|---:|---:|"
+          echo "| ${CRITICAL} | ${HIGH} | ${MEDIUM} | ${LOW} | ${UNKNOWN} | ${TOTAL} |"
           echo
         } >> "${GITHUB_STEP_SUMMARY}"
 
     - name: Fail on severity
-      if: inputs.fail-on-severity != ''
+      if: inputs.scan-type == 'image' && inputs.fail-on-severity != ''
       shell: bash
       env:
         FAIL_ON: ${{ inputs.fail-on-severity }}
