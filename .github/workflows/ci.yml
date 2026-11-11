@@ -110,6 +110,7 @@ jobs:
           bash tests/trivy-scan.sh
           bash tests/argocd-cve.sh
           bash tests/service-contract.sh
+          bash tests/flyway-lint.sh
           bash tests/service-build.sh
           bash tests/service-release.sh
           bash tests/pr-comment.sh
