@@ -48,6 +48,15 @@ jq -e '.items[] | select(.key=="localhost:5000/side/car" and .old=="localhost:50
 [ "$(jq -c '.include | length' "${tmp}/w/matrix.json")" = 5 ] || fail "matrix"
 echo "ok plan"
 
+# INCLUDE_UNCHANGED=true also lists the image that did not change in a changed file (redis), flagged unchanged.
+BASE_SHA="${base}" WORK="${tmp}/wu" IMAGES_CMD="${tmp}/images.sh" INCLUDE_UNCHANGED=true bash "${plan_scripts}/cve-plan.sh" >/dev/null
+uplan="${tmp}/wu/plan.json"
+[ "$(jq '.items | length' "${uplan}")" = 5 ] || fail "include-unchanged items: $(jq -c .items "${uplan}")"
+jq -e '.items[] | select(.key=="docker.io/library/redis" and .unchanged==true and .old==.new)' "${uplan}" >/dev/null || fail "unchanged redis item"
+jq -e '.items[] | select(.key=="ghcr.io/o/web" and .unchanged==false)' "${uplan}" >/dev/null || fail "changed item flagged unchanged"
+[ "$(jq '.scans | length' "${uplan}")" = 6 ] || fail "include-unchanged scans: $(jq -c .scans "${uplan}")"
+echo "ok plan include-unchanged"
+
 # Scan results: web 1.0 has A (critical), B (high), C (low); web 1.1 has B (same), C (other version), D (new high).
 put() {   # image, json
   local id; id=$(jq -r --arg i "$1" '.scans[] | select(.image == $i) | .id' "${plan}")
