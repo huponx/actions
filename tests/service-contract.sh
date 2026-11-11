@@ -69,6 +69,27 @@ sed '/dockerfile-path: build\/courier\/Dockerfile/d' "${tmp}/ci.yaml" > "${tmp}/
 if bash "${retrieve}" "${tmp}/bad3.yaml" >/dev/null 2>&1; then fail "missing required key accepted"; fi
 echo "ok validation"
 
+# languages: go, java and sql are accepted and listed once; anything else fails.
+cat > "${tmp}/langs.yaml" <<'Y'
+apps:
+  - name: a
+    language: sql
+    cicd: { jobs: { containerize-and-package: { image-name: a, dockerfile-path: Dockerfile, chart-path: charts/a, image-tag-paths: [.t] } } }
+  - name: b
+    language: java
+    cicd: { jobs: { containerize-and-package: { image-name: b, dockerfile-path: Dockerfile, chart-path: charts/b, image-tag-paths: [.t] } } }
+  - name: c
+    language: sql
+    cicd: { jobs: { containerize-and-package: { image-name: c, dockerfile-path: Dockerfile, chart-path: charts/c, image-tag-paths: [.t] } } }
+Y
+out=$(bash "${retrieve}" "${tmp}/langs.yaml")
+grep -qx 'languages=\["java","sql"\]' <<<"${out}" || fail "languages: ${out}"
+grep -qx 'languages=\["go"\]' <<<"$(bash "${retrieve}" "${tmp}/ci.yaml")" || fail "go languages"
+sed 's/language: java/language: rust/' "${tmp}/langs.yaml" > "${tmp}/badlang.yaml"
+if bash "${retrieve}" "${tmp}/badlang.yaml" >/dev/null 2>"${tmp}/err"; then fail "rust accepted"; fi
+grep -q 'language must be go, java or sql' "${tmp}/err" || fail "language message: $(cat "${tmp}/err")"
+echo "ok languages"
+
 ver="v2026.08.1-release-e1f4018"
 main=$(ACTOR=hung bash "${resolve}" "${tmp}/ci.yaml" main "${ver}")
 [ "$(jq length <<<"${main}")" = 2 ] || fail "main targets: ${main}"

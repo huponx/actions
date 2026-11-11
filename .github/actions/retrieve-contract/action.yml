@@ -14,6 +14,9 @@ outputs:
   environments:
     description: JSON array of the environment names declared under global.environments.
     value: ${{ steps.contract.outputs.environments }}
+  languages:
+    description: JSON array of the distinct languages of the apps (go, java, sql).
+    value: ${{ steps.contract.outputs.languages }}
   count:
     description: Number of apps.
     value: ${{ steps.contract.outputs.count }}
@@ -29,4 +32,4 @@ runs:
       run: |
         set -euo pipefail
         bash "${SCRIPTS}/retrieve.sh" "${CONFIG}" >> "${GITHUB_OUTPUT}"
-        cat "${GITHUB_OUTPUT}" | tail -n 3
+        cat "${GITHUB_OUTPUT}" | tail -n 4

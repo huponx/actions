@@ -18,6 +18,10 @@ on:
       go-version:
         type: string
         default: "1.26"
+      migrations-path:
+        description: Folder of the Flyway migrations (apps with language sql).
+        type: string
+        default: migrations/sql
       deploy-app-id:
         type: string
         default: ""
@@ -37,6 +41,7 @@ jobs:
       contents: read
     outputs:
       apps: ${{ steps.contract.outputs.apps }}
+      languages: ${{ steps.contract.outputs.languages }}
     steps:
       - uses: actions/checkout@v5
       - id: contract
@@ -46,24 +51,48 @@ jobs:
 
   lint-test:
     needs: contract
+    if: ${{ contains(needs.contract.outputs.languages, '"go"') || contains(needs.contract.outputs.languages, '"java"') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@v5
-      - uses: huponx/actions/.github/actions/lang-setup@v1
+      - if: contains(needs.contract.outputs.languages, '"go"')
+        uses: huponx/actions/.github/actions/lang-setup@v1
         with:
           lang: go
           go-version: ${{ inputs.go-version }}
-      - run: go vet ./...
-      - run: go test ./...
+      - if: contains(needs.contract.outputs.languages, '"go"')
+        run: go vet ./...
+      - if: contains(needs.contract.outputs.languages, '"go"')
+        run: go test ./...
       - name: golangci-lint
-        if: hashFiles('.golangci.yml', '.golangci.yaml', '.golangci.toml') != ''
+        if: contains(needs.contract.outputs.languages, '"go"') && hashFiles('.golangci.yml', '.golangci.yaml', '.golangci.toml') != ''
         uses: golangci/golangci-lint-action@v8
+      - if: contains(needs.contract.outputs.languages, '"java"')
+        uses: huponx/actions/.github/actions/lang-setup@v1
+        with:
+          lang: java
+      - if: contains(needs.contract.outputs.languages, '"java"')
+        run: mvn -B -ntp verify
+
+  lint-flyway:
+    needs: contract
+    if: ${{ contains(needs.contract.outputs.languages, '"sql"') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+      - uses: huponx/actions/.github/actions/flyway-lint@v1
+        with:
+          path: ${{ inputs.migrations-path }}
 
   prerelease:
-    needs: [contract, lint-test]
+    needs: [contract, lint-test, lint-flyway]
+    if: ${{ !cancelled() && needs.contract.result == 'success' && needs.lint-test.result != 'failure' && needs.lint-flyway.result != 'failure' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

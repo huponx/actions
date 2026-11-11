@@ -20,6 +20,10 @@ on:
       go-version:
         type: string
         default: "1.26"
+      migrations-path:
+        description: Folder of the Flyway migrations (apps with language sql).
+        type: string
+        default: migrations/sql
       deploy-app-id:
         description: Id of a GitHub App for the deployment repositories (empty = BOT_TOKEN).
         type: string
@@ -38,6 +42,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       apps: ${{ steps.contract.outputs.apps }}
+      languages: ${{ steps.contract.outputs.languages }}
     steps:
       - uses: actions/checkout@v5
       - id: contract
@@ -47,19 +52,40 @@ jobs:
 
   lint-test:
     needs: contract
+    if: ${{ contains(needs.contract.outputs.languages, '"go"') || contains(needs.contract.outputs.languages, '"java"') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
-      - uses: huponx/actions/.github/actions/lang-setup@v1
+      - if: contains(needs.contract.outputs.languages, '"go"')
+        uses: huponx/actions/.github/actions/lang-setup@v1
         with:
           lang: go
           go-version: ${{ inputs.go-version }}
-      - run: go vet ./...
-      - run: go test ./...
+      - if: contains(needs.contract.outputs.languages, '"go"')
+        run: go vet ./...
+      - if: contains(needs.contract.outputs.languages, '"go"')
+        run: go test ./...
       - name: golangci-lint
-        if: hashFiles('.golangci.yml', '.golangci.yaml', '.golangci.toml') != ''
+        if: contains(needs.contract.outputs.languages, '"go"') && hashFiles('.golangci.yml', '.golangci.yaml', '.golangci.toml') != ''
         uses: golangci/golangci-lint-action@v8
+      - if: contains(needs.contract.outputs.languages, '"java"')
+        uses: huponx/actions/.github/actions/lang-setup@v1
+        with:
+          lang: java
+      - if: contains(needs.contract.outputs.languages, '"java"')
+        run: mvn -B -ntp verify
+
+  lint-flyway:
+    needs: contract
+    if: ${{ contains(needs.contract.outputs.languages, '"sql"') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: huponx/actions/.github/actions/flyway-lint@v1
+        with:
+          path: ${{ inputs.migrations-path }}
 
   version:
     runs-on: ubuntu-latest
@@ -71,7 +97,8 @@ jobs:
         run: echo "version=1.$(date -u +%Y%m%d).${GITHUB_RUN_NUMBER}-main-${GITHUB_SHA:0:7}" >> "${GITHUB_OUTPUT}"
 
   build:
-    needs: [contract, lint-test, version]
+    needs: [contract, lint-test, lint-flyway, version]
+    if: ${{ !cancelled() && needs.contract.result == 'success' && needs.lint-test.result != 'failure' && needs.lint-flyway.result != 'failure' }}
     uses: huponx/actions/.github/workflows/service-build.yml@v1
     with:
       apps: ${{ needs.contract.outputs.apps }}

@@ -1,0 +1,18 @@
+name: flyway-lint
+description: >-
+  Check the file names of a Flyway migration folder (V<version>__<description>.sql or R__<description>.sql,
+  unique versions, no empty file). The content of the SQL is not analysed.
+inputs:
+  path:
+    description: Folder with the migrations, searched recursively.
+    required: false
+    default: migrations/sql
+runs:
+  using: composite
+  steps:
+    - name: Check the migration file names
+      shell: bash
+      env:
+        MIGRATIONS: ${{ inputs.path }}
+        SCRIPTS: ${{ github.action_path }}/scripts
+      run: bash "${SCRIPTS}/lint.sh" "${MIGRATIONS}"
