@@ -2,7 +2,7 @@ name: lang-setup
 description: Install the toolchain (and dependency caches) needed to compile one language project.
 inputs:
   lang:
-    description: go | java | scala | rust
+    description: go | java | scala | rust | node
     required: true
   root:
     description: Directory of the language project (pom.xml, build.sbt, Cargo.toml). Used for cache keys.
@@ -16,6 +16,10 @@ inputs:
     description: JDK version for java and scala
     required: false
     default: "17"
+  node-version:
+    description: Node.js version (pnpm comes from the packageManager field of package.json)
+    required: false
+    default: "20"
 runs:
   using: composite
   steps:
@@ -53,3 +57,13 @@ runs:
       uses: Swatinem/rust-cache@v2
       with:
         workspaces: ${{ inputs.root }}
+
+    - if: inputs.lang == 'node'
+      uses: pnpm/action-setup@v4
+
+    - if: inputs.lang == 'node'
+      uses: actions/setup-node@v5
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: pnpm
+        cache-dependency-path: ${{ inputs.root }}/pnpm-lock.yaml

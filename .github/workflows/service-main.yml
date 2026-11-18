@@ -20,6 +20,10 @@ on:
       go-version:
         type: string
         default: "1.26"
+      node-version:
+        description: Node.js version (apps with language node).
+        type: string
+        default: "20"
       migrations-path:
         description: Folder of the Flyway migrations (apps with language sql).
         type: string
@@ -52,7 +56,7 @@ jobs:
 
   lint-test:
     needs: contract
-    if: ${{ contains(needs.contract.outputs.languages, '"go"') || contains(needs.contract.outputs.languages, '"java"') }}
+    if: ${{ contains(needs.contract.outputs.languages, '"go"') || contains(needs.contract.outputs.languages, '"java"') || contains(needs.contract.outputs.languages, '"node"') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -75,6 +79,15 @@ jobs:
           lang: java
       - if: contains(needs.contract.outputs.languages, '"java"')
         run: mvn -B -ntp verify
+      - if: contains(needs.contract.outputs.languages, '"node"')
+        uses: huponx/actions/.github/actions/lang-setup@v1
+        with:
+          lang: node
+          node-version: ${{ inputs.node-version }}
+      - if: contains(needs.contract.outputs.languages, '"node"')
+        run: pnpm install --frozen-lockfile
+      - if: contains(needs.contract.outputs.languages, '"node"')
+        run: pnpm lint && pnpm typecheck && pnpm test
 
   lint-flyway:
     needs: contract

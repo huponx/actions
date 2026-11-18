@@ -15,7 +15,7 @@ Shared composite GitHub Actions. Reference them from any repo of the owner:
 |---|---|
 | [`lang-setup`](.github/actions/lang-setup/action.yml) | install the toolchain and caches for `go`, `java`, `scala` or `rust` |
 | [`flyway-lint`](.github/actions/flyway-lint/action.yml) | check the file names of a Flyway folder (`V<version>__<description>.sql`, `R__<description>.sql`, unique versions, no empty file); the SQL itself is not analysed |
-| [`lang-compile`](.github/actions/lang-compile/action.yml) | compile a project: `go build`, `mvn compile`, `sbt compile`, `cargo check` |
+| [`lang-compile`](.github/actions/lang-compile/action.yml) | compile a project (go, java, scala, rust): `go build`, `mvn compile`, `sbt compile`, `cargo check` |
 | [`trivy-scan`](.github/actions/trivy-scan/action.yml) | scan a container image for CVEs with Trivy and write a normalised JSON list (id, package, installed/fixed version, severity); optional fail on severity |
 | [`pr-comment`](.github/actions/pr-comment/action.yml) | create or update one sticky PR comment found by a marker; skips forks, warns instead of failing by default (used by the CVE and cluster diff comments) |
 | [`retrieve-contract`](.github/actions/retrieve-contract/action.yml) | read and validate `.github/config/ci.yaml` (unknown keys fail), output the apps matrix and the distinct `languages` |
@@ -29,8 +29,9 @@ Shared composite GitHub Actions. Reference them from any repo of the owner:
 | [`argocd-cve-plan`](.github/actions/argocd-cve-plan/action.yml) | PR: render old and new chart revisions of changed Applications, output a matrix of the images to scan |
 | [`argocd-cve-report`](.github/actions/argocd-cve-report/action.yml) | PR: compare the scans of the old and the new image, sticky comment with NEW and removed CVEs, optional gate |
 | [`argocd-manifest-diff`](.github/actions/argocd-manifest-diff/action.yml) | on a PR that changes ArgoCD Applications: render both chart revisions, publish a side-by-side HTML diff to a GitHub Pages repo, keep one PR comment with the changed resources and compare links |
+| [`ansible-setup`](.github/actions/ansible-setup/action.yml) | install Ansible from the caller's `requirements.txt`/`requirements.yml`, write the SSH key, pinned `known_hosts` and vault password file under `RUNNER_TEMP` (mode 600), export `ANSIBLE_*` variables; without a key it only installs the tools (lint, syntax check). Caller removes `$SECRETS_DIR` in an `if: always()` step (used by `mm-ansible`) |
 
-Both take `lang` and `root` (the directory of the language project, default `.`). `lang-setup` also takes `go-version` and `java-version`; `lang-compile` takes `tidy` (`go mod tidy` first, for generation).
+Both take `lang` and `root` (the directory of the language project, default `.`). `lang-setup` also takes `go-version`, `java-version` and `node-version` (`lang: node` installs pnpm from the `packageManager` field and Node); `lang-compile` takes `tidy` (`go mod tidy` first, for generation).
 
 Used by `protogen` (`generate.yml`, `check.yml`) with `root` set to the language directory.
 
@@ -45,7 +46,7 @@ A service describes itself once in `.github/config/ci.yaml` and calls four thin 
 | `service-staging` | push to `release*` | `v<YYYY>.<MM>.N-release-<sha7>` | `create-prerelease`, image and chart pushed, deployment PR for `staging` |
 | `service-production` | `release: released` | the release tag | no build; fails when the image or chart of the tag is missing in ghcr.io; deployment PR for `production` |
 
-Contract (every key not listed here fails `retrieve-contract`). `language` is `go`, `java` or `sql`: `service-pr`, `service-main` and `service-staging` run `lint-test` (go: `go vet`, `go test`, golangci-lint when configured; java: `mvn -B -ntp verify`) only for go/java apps and `lint-flyway` (`flyway-lint` on the `migrations-path` input, default `migrations/sql`) only for sql apps:
+Contract (every key not listed here fails `retrieve-contract`). `language` is `go`, `java`, `node` or `sql`: `service-pr`, `service-main` and `service-staging` run `lint-test` (go: `go vet`, `go test`, golangci-lint when configured; java: `mvn -B -ntp verify`; node: `pnpm install --frozen-lockfile`, then `pnpm lint`, `pnpm typecheck`, `pnpm test`, Node version from the `node-version` input, default 20) only for go/java/node apps and `lint-flyway` (`flyway-lint` on the `migrations-path` input, default `migrations/sql`) only for sql apps:
 
 ```yaml
 apps:

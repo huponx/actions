@@ -1,0 +1,120 @@
+name: ansible-setup
+description: >-
+  Install Ansible from the caller's requirements files, then prepare the SSH connection to a server
+  (private key, pinned known_hosts, ANSIBLE_* connection variables) and the Ansible Vault password file.
+  Secrets are written under RUNNER_TEMP with mode 600 and exported as ANSIBLE_PRIVATE_KEY_FILE and
+  ANSIBLE_VAULT_PASSWORD_FILE; SECRETS_DIR is exported so the caller can delete them in an `if: always()` step.
+  Without ssh-private-key it only installs the tools and sets placeholders, enough for lint and syntax checks.
+  Run it after actions/checkout.
+
+inputs:
+  python-version:
+    description: Python version
+    required: false
+    default: "3.12"
+  requirements-file:
+    description: pip requirements file of the caller (ansible-core, ansible-lint, yamllint)
+    required: false
+    default: requirements.txt
+  collections-file:
+    description: Galaxy requirements file of the caller; skipped when the file does not exist
+    required: false
+    default: requirements.yml
+  ssh-private-key:
+    description: Private key of the CI user (secret ANSIBLE_SSH_PRIVATE_KEY)
+    required: false
+  known-hosts:
+    description: Pinned host key line(s) of the server (secret ANSIBLE_KNOWN_HOSTS)
+    required: false
+  vault-password:
+    description: Ansible Vault passphrase (secret ANSIBLE_VAULT_PASS)
+    required: false
+  host:
+    description: Server address (variable ANSIBLE_HOST)
+    required: false
+  user:
+    description: SSH user (variable ANSIBLE_USER)
+    required: false
+    default: ansible
+  port:
+    description: SSH port (variable ANSIBLE_SSH_PORT)
+    required: false
+    default: "22"
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+        cache: pip
+        cache-dependency-path: ${{ inputs.requirements-file }}
+
+    - name: Install Ansible and linters
+      shell: bash
+      env:
+        REQUIREMENTS: ${{ inputs.requirements-file }}
+      run: pip install -r "$REQUIREMENTS"
+
+    - name: Cache Galaxy collections
+      uses: actions/cache@v4
+      with:
+        path: ~/.ansible/collections
+        key: galaxy-${{ hashFiles(inputs.collections-file) }}
+
+    - name: Install Ansible collections
+      shell: bash
+      env:
+        COLLECTIONS: ${{ inputs.collections-file }}
+      run: |
+        if [ -f "$COLLECTIONS" ]; then
+          ansible-galaxy collection install -r "$COLLECTIONS"
+        fi
+
+    - name: Prepare SSH and vault files
+      if: inputs.ssh-private-key != ''
+      shell: bash
+      env:
+        SSH_KEY: ${{ inputs.ssh-private-key }}
+        KNOWN_HOSTS: ${{ inputs.known-hosts }}
+        VAULT_PASS: ${{ inputs.vault-password }}
+        HOST: ${{ inputs.host }}
+        SSH_USER: ${{ inputs.user }}
+        SSH_PORT: ${{ inputs.port }}
+      run: |
+        set -euo pipefail
+        umask 077
+        if [ -z "$HOST" ] || [ -z "$KNOWN_HOSTS" ] || [ -z "$VAULT_PASS" ]; then
+          echo "::error::Missing ANSIBLE_HOST variable, ANSIBLE_KNOWN_HOSTS or ANSIBLE_VAULT_PASS secret. See README, One-time setup."
+          exit 1
+        fi
+        secrets_dir="${RUNNER_TEMP}/ansible-secrets"
+        mkdir -p "$secrets_dir" ~/.ssh
+        printf '%s\n' "$SSH_KEY" > "$secrets_dir/id_ed25519"
+        printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+        printf '%s\n' "$VAULT_PASS" > "$secrets_dir/vault_pass"
+        {
+          echo "ANSIBLE_HOST=$HOST"
+          echo "ANSIBLE_USER=$SSH_USER"
+          echo "ANSIBLE_SSH_PORT=$SSH_PORT"
+          echo "ANSIBLE_PRIVATE_KEY_FILE=$secrets_dir/id_ed25519"
+          echo "ANSIBLE_VAULT_PASSWORD_FILE=$secrets_dir/vault_pass"
+          echo "ANSIBLE_HOST_KEY_CHECKING=True"
+          echo "ANSIBLE_FORCE_COLOR=1"
+          echo "SECRETS_DIR=$secrets_dir"
+        } >> "$GITHUB_ENV"
+
+    - name: Placeholders for jobs without server access
+      if: inputs.ssh-private-key == ''
+      shell: bash
+      run: |
+        # Syntax checks parse the inventory and vault references but never connect.
+        umask 077
+        secrets_dir="${RUNNER_TEMP}/ansible-secrets"
+        mkdir -p "$secrets_dir"
+        echo "placeholder" > "$secrets_dir/vault_pass"
+        {
+          echo "ANSIBLE_HOST=example.invalid"
+          echo "ANSIBLE_VAULT_PASSWORD_FILE=$secrets_dir/vault_pass"
+        } >> "$GITHUB_ENV"
