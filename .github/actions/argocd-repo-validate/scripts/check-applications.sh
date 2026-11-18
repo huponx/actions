@@ -35,6 +35,10 @@ for f in "${files[@]}"; do
 
   repo=$(yq '.spec.source.repoURL // ""' "${f}")
   [ -n "${repo}" ] || err "${f}" "spec.source.repoURL is required"
+  # Helm repository form: repoURL has no oci:// scheme and the chart name is in spec.source.chart
+  if [ -n "$(yq '.spec.source.chart // ""' "${f}")" ]; then
+    case "${repo}" in oci://*) err "${f}" "with spec.source.chart the repoURL has no oci:// prefix (ghcr.io/<owner>/charts)" ;; esac
+  fi
 
   rev=$(yq '.spec.source.targetRevision // ""' "${f}")
   case "${rev}" in

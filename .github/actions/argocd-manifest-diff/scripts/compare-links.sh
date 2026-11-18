@@ -17,7 +17,8 @@ new_rev="${3:?usage: $0 <application.yaml> <old_rev> <new_rev>}"
 name=$(yq '.metadata.name' "${app}")
 repo=$(yq '.metadata.annotations."argocd-manifest-diff/source-repo" // ""' "${app}")
 if [ -z "${repo}" ]; then
-  chart_url=$(yq '.spec.source.repoURL' "${app}")          # oci://ghcr.io/<owner>/charts/<name>
+  chart_url=$(yq '.spec.source.repoURL' "${app}")          # ghcr.io/<owner>/charts (+ chart: <name>) or oci://ghcr.io/<owner>/charts/<name>
+  chart_url="oci://${chart_url#oci://}/"
   owner=$(sed -E 's#^oci://[^/]+/([^/]+)/.*#\1#' <<<"${chart_url}")
   repo="${owner}/${name}"
 fi
