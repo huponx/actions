@@ -6,7 +6,7 @@
 # Stdout (key=value, ready for $GITHUB_OUTPUT):
 #   apps=<compact JSON array>          one entry per app (defaults applied)
 #   environments=<compact JSON array>  names under global.environments
-#   languages=<compact JSON array>     distinct languages of the apps (go, java, sql)
+#   languages=<compact JSON array>     distinct languages of the apps (go, java, node, sql)
 #   count=<number of apps>
 # Unknown keys and missing required keys fail with ::error:: lines. Needs yq (mikefarah v4) and jq.
 set -euo pipefail
@@ -28,7 +28,7 @@ errors=$(jq -r '
     | ($a.name // "?") as $n
     | unknown($a; ["name","language","cicd","create-deployment-pr"]; "apps[\($n)]"),
       (if ($a.name // "") == "" then "apps[\($n)]: name is required" else empty end),
-      (if (["go","java","sql"] | index($a.language // "")) == null then "apps[\($n)]: language must be go, java or sql" else empty end),
+      (if (["go","java","node","sql"] | index($a.language // "")) == null then "apps[\($n)]: language must be go, java, node or sql" else empty end),
       (($a.cicd.jobs."containerize-and-package") as $j
         | if $j == null then "apps[\($n)]: cicd.jobs.containerize-and-package is required"
           else unknown($j; ["image-name","dockerfile-path","chart-path","image-tag-paths","trivy"]; "apps[\($n)].containerize-and-package"),

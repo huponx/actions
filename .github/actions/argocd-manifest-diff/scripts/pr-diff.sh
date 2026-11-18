@@ -72,8 +72,8 @@ for f in "${files[@]}"; do
     echo
   } >> "${work}/comment.md"
 
-  if ! "${here}/render-app.sh" "${dir}/old.yaml" "${dir}/old" > "${dir}/render.log" 2>&1 \
-     || ! "${here}/render-app.sh" "${dir}/new.yaml" "${dir}/new" >> "${dir}/render.log" 2>&1; then
+  if ! bash "${here}/render-app.sh" "${dir}/old.yaml" "${dir}/old" > "${dir}/render.log" 2>&1 \
+     || ! bash "${here}/render-app.sh" "${dir}/new.yaml" "${dir}/new" >> "${dir}/render.log" 2>&1; then
     {
       echo "Could not render the chart, so no diff is available:"
       echo
@@ -85,7 +85,7 @@ for f in "${files[@]}"; do
     continue
   fi
 
-  "${here}/diff-render.sh" "${dir}/old" "${dir}/new" "${dir}/out" > /dev/null
+  bash "${here}/diff-render.sh" "${dir}/old" "${dir}/new" "${dir}/out" > /dev/null
   { cat "${dir}/out/summary.md"; echo; } >> "${work}/comment.md"
 
   if [ ! -s "${dir}/out/changes.diff" ]; then continue; fi
@@ -96,7 +96,7 @@ for f in "${files[@]}"; do
   elif [ "${old_rev}" = "${new_rev}" ]; then page="${app}/$(safe "${new_rev}")-values-$(git rev-parse --short HEAD).html"
   else page="${app}/$(safe "${old_rev}")...$(safe "${new_rev}").html"; fi
   rel="${diffs_path:+${diffs_path}/}${page}"
-  "${here}/diff-html.sh" "${dir}/out/changes.diff" "${work}/pages/${rel}" "${app}: ${old_rev:-none} -> ${new_rev:-removed}"
+  bash "${here}/diff-html.sh" "${dir}/out/changes.diff" "${work}/pages/${rel}" "${app}: ${old_rev:-none} -> ${new_rev:-removed}"
 
   if [ -n "${base_url}" ]; then
     url="${base_url}/${page}"
@@ -107,7 +107,7 @@ for f in "${files[@]}"; do
 
   # Service repository links (only when both revisions exist).
   if [ -s "${dir}/new.yaml" ]; then
-    "${here}/compare-links.sh" "${dir}/new.yaml" "${old_rev}" "${new_rev}" >> "${work}/comment.md" 2>/dev/null || true
+    bash "${here}/compare-links.sh" "${dir}/new.yaml" "${old_rev}" "${new_rev}" >> "${work}/comment.md" 2>/dev/null || true
     echo >> "${work}/comment.md"
   fi
 

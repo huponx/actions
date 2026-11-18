@@ -1,0 +1,33 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Editors and IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Downloaded by CI and local lint runs
+/actionlint
+/actionlint.exe
+
+# Temporary files from local runs of the scripts and tests
+*.log
+*.tmp
+.tmp/
+tmp/
+
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Python caches (metadata check)
+__pycache__/
+*.pyc
+.venv/
