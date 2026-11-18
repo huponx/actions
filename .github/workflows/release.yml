@@ -65,9 +65,10 @@ jobs:
             tag="v1.0.0"
             why="first release"
           else
-            # Only changes under .github/actions release, unless a bump was chosen by hand.
-            if [ "${bump}" = "auto" ] && git diff --quiet "${latest}" HEAD -- .github/actions; then
-              out reason "no change under .github/actions since ${latest}"
+            # Only changes to an action or a reusable service-* workflow release, unless a bump was chosen by hand.
+            released_paths=(.github/actions ':(glob).github/workflows/service-*.yml')
+            if [ "${bump}" = "auto" ] && git diff --quiet "${latest}" HEAD -- "${released_paths[@]}"; then
+              out reason "no change to an action or a service-* workflow since ${latest}"
               exit 0
             fi
 
@@ -84,7 +85,7 @@ jobs:
                 elif [[ "${subject}" =~ ^feat(\(|:|!) ]] && [ "${bump}" != "major" ]; then
                   bump="minor"; why="feat: ${subject}"
                 fi
-              done < <(git log --format='%s%x1f%b%x1e' "${latest}..HEAD" -- .github/actions)
+              done < <(git log --format='%s%x1f%b%x1e' "${latest}..HEAD" -- "${released_paths[@]}")
             else
               why="chosen by hand"
             fi
