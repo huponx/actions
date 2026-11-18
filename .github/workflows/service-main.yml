@@ -122,6 +122,8 @@ jobs:
 
   deploy:
     needs: [version, build]
+    # lint-flyway is skipped for non-sql apps; a skipped ancestor would skip this job under the implicit success().
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
     uses: huponx/actions/.github/workflows/service-deploy.yml@v1
     with:
       flow: main

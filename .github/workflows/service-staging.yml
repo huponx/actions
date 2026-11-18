@@ -120,6 +120,8 @@ jobs:
 
   build:
     needs: [contract, prerelease]
+    # lint-flyway is skipped for non-sql apps; a skipped ancestor would skip this job under the implicit success().
+    if: ${{ !cancelled() && needs.prerelease.result == 'success' }}
     uses: huponx/actions/.github/workflows/service-build.yml@v1
     with:
       apps: ${{ needs.contract.outputs.apps }}
@@ -130,6 +132,7 @@ jobs:
 
   deploy:
     needs: [prerelease, build]
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
     uses: huponx/actions/.github/workflows/service-deploy.yml@v1
     with:
       flow: staging
