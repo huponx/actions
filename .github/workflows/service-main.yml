@@ -16,7 +16,7 @@ on:
       config-path:
         description: Path of the CI contract in the service repository.
         type: string
-        # default: .github/config/ci.yaml
+        default: .github/config/ci.yaml
       go-version:
         type: string
         default: "1.26"
