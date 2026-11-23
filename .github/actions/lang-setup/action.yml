@@ -59,7 +59,7 @@ runs:
         workspaces: ${{ inputs.root }}
 
     - if: inputs.lang == 'node'
-      uses: pnpm/action-setup@v4
+      uses: pnpm/action-setup@v5
 
     - if: inputs.lang == 'node'
       uses: actions/setup-node@v5
