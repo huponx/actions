@@ -99,6 +99,11 @@ runs:
           VERSION=${{ inputs.version }}
           REVISION=${{ github.sha }}
           ${{ inputs.build-args }}
+        # BuildKit secret (not stored in a layer): a Dockerfile reads it with
+        # RUN --mount=type=secret,id=node_auth_token to install @huponx packages from GitHub Packages.
+        # Dockerfiles that do not mount it ignore it.
+        secrets: |
+          node_auth_token=${{ inputs.github-token }}
         cache-from: type=gha,scope=${{ inputs.image-name }}
         cache-to: type=gha,mode=max,scope=${{ inputs.image-name }}
 
