@@ -1,8 +1,8 @@
 name: lang-compile
-description: Compile one language project (go build, mvn compile, sbt compile, cargo check).
+description: Compile one language project (go build, mvn compile, sbt compile, cargo check, tsc).
 inputs:
   lang:
-    description: go | java | scala | rust
+    description: go | java | scala | rust | ts
     required: true
   root:
     description: Directory of the language project. For go, every go.mod below it is built.
@@ -48,6 +48,10 @@ runs:
             ;;
           rust)
             ( cd "${ROOT}" && cargo check )
+            ;;
+          ts)
+            # the package ships TypeScript source: type-check it with the compiler it declares
+            ( cd "${ROOT}" && npm install --no-audit --no-fund --no-package-lock && npx tsc --noEmit -p . )
             ;;
           *)
             echo "unknown language ${LANG_NAME}" >&2
