@@ -2,7 +2,7 @@ name: lang-setup
 description: Install the toolchain (and dependency caches) needed to compile one language project.
 inputs:
   lang:
-    description: go | java | scala | rust | ts | node
+    description: go | java | scala | rust | node
     required: true
   root:
     description: Directory of the language project (pom.xml, build.sbt, Cargo.toml). Used for cache keys.
@@ -20,10 +20,6 @@ inputs:
     description: Node.js version (pnpm comes from the packageManager field of package.json)
     required: false
     default: "20"
-  registry-token:
-    description: Token with read:packages for npm.pkg.github.com (the node language), exported as NODE_AUTH_TOKEN
-    required: false
-    default: ${{ github.token }}
 runs:
   using: composite
   steps:
@@ -62,28 +58,8 @@ runs:
       with:
         workspaces: ${{ inputs.root }}
 
-    # ts: the protogen TypeScript package (permission constants). Node compiles it; Go builds the generator
-    # (protos/tools/protoc-gen-ts-permissions) that scripts/generate.sh runs.
-    - if: inputs.lang == 'ts'
-      uses: actions/setup-node@v5
-      with:
-        node-version: ${{ inputs.node-version }}
-
-    - if: inputs.lang == 'ts'
-      uses: actions/setup-go@v6
-      with:
-        go-version: ${{ inputs.go-version }}
-        cache: false
-
     - if: inputs.lang == 'node'
       uses: pnpm/action-setup@v5
-
-    # @huponx packages (protogen ts) come from GitHub Packages; web/.npmrc reads NODE_AUTH_TOKEN
-    - if: inputs.lang == 'node'
-      shell: bash
-      env:
-        TOKEN: ${{ inputs.registry-token }}
-      run: echo "NODE_AUTH_TOKEN=${TOKEN}" >> "${GITHUB_ENV}"
 
     - if: inputs.lang == 'node'
       uses: actions/setup-node@v5
